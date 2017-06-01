@@ -1,0 +1,82 @@
+#!/bin/sh
+
+set -e
+set -u
+
+help() {
+  cat << EOF
+Usage: $(basename ${0}) COMMAND
+    $(basename ${0}) status
+    $(basename ${0}) set --email email@example.com --key abcd1234
+
+    status          Shows current settings
+    set <option>    Sets new
+        --email         Used for user.email and user.signingkey if no
+                        --key given
+        --name          Value for user.name
+        --key           Value for user.signingkey
+EOF
+}
+
+output() { # msg1 msg2
+    echo "Setting \033[0;33m${1}\033[0m to \033[0;33m${2}\033[0m"
+}
+
+configure() { # --name NAME --email EMAIL --key KEY
+    name=
+    email=
+    key=
+    while [[ $# -gt 1 ]]; do
+        case ${1} in
+            --name)     name=$2;  shift ;;
+            --email)    email=$2; shift ;;
+            --key)      key=$2;   shift ;;
+            *)
+                echo "Invalid option: ${1}"
+                help; exit 1
+            ;;
+        esac
+        shift
+    done
+
+    if [[ -n ${name} ]]; then
+        output user.name "${name}"
+        git config --local --unset user.name || true
+        git config --local --add user.name "${name}"
+    fi
+
+    if [[ -n ${email} ]]; then
+        output user.email "${email}"
+        git config --local --unset user.email || true
+        git config --local --add user.email "${email}"
+        if [[ -z ${key} ]]; then
+            key=$(gpg --list-key ${email} | awk '/^pub/{getline; print $1}')
+        fi
+    fi
+
+    if [[ -n ${key} ]]; then
+        output user.key "${key}"
+        git config --local --unset user.signingkey || true
+        git config --local --add user.signingkey "${key}"
+    fi
+}
+
+test $# -eq 0 && help && exit 0
+
+case "${1}" in
+    status)
+        echo "name:     $(git config --get user.name)"
+        echo "email:    $(git config --local --get user.email)"
+        echo "sign key: $(git config --local --get user.signingkey)"
+    ;;
+    set)
+        test -z "${2:-}" && help && exit 1
+        shift
+        configure "$@"
+    ;;
+    *)
+        echo "Invalid command: ${1}"
+        echo ""
+        help; exit 1
+    ;;
+esac
