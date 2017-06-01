@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+#bin-update - A script that updates bin folder
+
+cd ~/bin
+
+git pull && chmod +x ~/bin/exec/* && cp ~/bin/.zshrc ~/ && cp ~/bin/.npmrc ~/ && cp ~/bin/.gitconfig ~/
