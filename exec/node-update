@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+#node-update - A script to handle NodeJS Update process
+
+. ~/.nvm/nvm.sh
+
+OLD="$(nvm current)"
+
+LATEST="$(curl -s http://nodejs.org/dist/ -o - | grep 'v[0-9].*' | sort | sed -e 's/.*node-//' -e 's/\.tar\.gz.*//' -e 's/<[^>]*>//' -e 's/\/<[^>]*>.*//' -e '$!d')"
+
+echo "Old version: ${OLD}"
+echo "Latest version: ${LATEST}"
+
+if [[ $OLD == $LATEST ]]; then
+    echo "Already latest version"
+    exit
+fi
+
+nvm install stable --reinstall-packages-from="${OLD}"
+
+nvm alias default stable
+
+nvm uninstall "${OLD}"
