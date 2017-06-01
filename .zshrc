@@ -61,7 +61,12 @@ function mkcdir
     mkdir -p -- "$1" && cd -P -- "$1"
 }
 
-docker-dangling-volumes ()
+function user-list
+{
+	cut -d: -f1 /etc/passwd
+}
+
+function docker-dangling-volumes
 {
 	dockera volume ls -f dangling=true
 }
