@@ -1,0 +1,21 @@
+[user]
+	name = Nace Logar
+[commit]
+	gpgsign = true
+[push]
+	# prevents your from accidentally pushing to a wrong branch
+	default = nothing
+[alias]
+	dc   = diff --cached
+	co   = checkout
+	ci   = commit
+	cm   = commit -m
+	st   = status
+	br   = branch
+	lg   = !git log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %Cgreen(%cr) %C(bold blue)<%an>%Creset'
+	slog = log --oneline
+	rb   = rebase
+	rbc  = rebase --continue
+	rbi  = rebase -i
+	fap  = fetch --all --prune --progress
+	latest = for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(committerdate:iso8601) %(refname:short)%(authorname)'
