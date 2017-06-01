@@ -3,6 +3,7 @@
 source ~/.antigen/antigen.zsh
 source ~/.nvm/nvm.sh
 source ~/.rvm/scripts/rvm
+source <(npm completion)
 
 # Load the oh-my-zsh's library.
 antigen use oh-my-zsh
