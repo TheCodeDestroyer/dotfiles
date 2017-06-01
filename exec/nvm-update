@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+#nvm-update - A script to handle NVM update process
+
+cd ~/.nvm
+
+git checkout master
+
+git pull
+
+git checkout `git describe --abbrev=0 --tags --match "v[0-9]*" origin`
