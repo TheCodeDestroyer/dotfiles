@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+#check-kernels - A script that checks installed and currently used kernels
+
+echo "Curent kernel: $(uname -r)"
+
+echo "Installed kernels:"
+
+dpkg --list | grep "linux-image" | awk '{print "-" $2}'
