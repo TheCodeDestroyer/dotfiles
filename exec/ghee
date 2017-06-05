@@ -55,7 +55,7 @@ configure() { # --name NAME --email EMAIL --key KEY
     fi
 
     if [[ -n ${key} ]]; then
-        output user.key "${key}"
+        output user.signingkey "${key}"
         git config --local --unset user.signingkey || true
         git config --local --add user.signingkey "${key}"
     fi
