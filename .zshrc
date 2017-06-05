@@ -73,7 +73,7 @@ function docker-dangling-volumes
 }
 
 #ALIASES
-alias ghee-defualt=ghee set --name "Nace Logar" --email "the.code.destroyer@gmail.com"
+alias ghee-default=ghee set --name "Nace Logar" --email "the.code.destroyer@gmail.com"
 
 alias ghee-work=ghee set --name "Nace Logar" --email "nace.logar@3fs.si"
 
