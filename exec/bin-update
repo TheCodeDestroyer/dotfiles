@@ -4,4 +4,4 @@
 
 cd ~/bin
 
-git pull && chmod +x ~/bin/exec/* && cp ~/bin/.zshrc ~/ && cp ~/bin/.npmrc ~/ && cp ~/bin/.gitconfig ~/
+git pull --rebase && chmod +x ~/bin/exec/* && cp ~/bin/.zshrc ~/ && cp ~/bin/.npmrc ~/ && cp ~/bin/.gitconfig ~/
