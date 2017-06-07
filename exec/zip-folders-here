@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+#zip-folders-here - A script that gzips all folders to its own file
+
+echo "----------Starting----------"
+
+for dir in */
+do
+  base=$(basename "$dir")
+  tar -czf "${base}.tar.gz" "$dir" && echo "Created $base.tar.gz"
+done
+
+echo "----------Finished!----------"
