@@ -21,3 +21,5 @@
 	rbi  	= rebase -i
 	fap  	= fetch --all --prune --progress
 	latest 	= for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(committerdate:iso8601) %(refname:short)%(authorname)'
+[gpg]
+	program = gpg-default
