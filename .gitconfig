@@ -14,7 +14,7 @@
 	br   	= branch
 	lg   	= !git log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %Cgreen(%cr) %C(bold blue)<%an>%Creset'
 	slog 	= log --oneline
-	sig		= git verify-commit HEAD^
+	sig		= verify-commit HEAD^
 	rb   	= rebase
 	rbc  	= rebase --continue
 	rba  	= rebase --abort
