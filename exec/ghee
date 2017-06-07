@@ -1,13 +1,13 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -e
 set -u
 
 help() {
   cat << EOF
-Usage: $(basename ${0}) COMMAND
-    $(basename ${0}) status
-    $(basename ${0}) set --email email@example.com --key abcd1234
+Usage: $(basename "${0}") COMMAND
+    $(basename "${0}") status
+    $(basename "${0}") set --email email@example.com --key abcd1234
 
     status          Shows current settings
     set <option>    Sets new
@@ -19,7 +19,9 @@ EOF
 }
 
 output() { # msg1 msg2
-    echo "Setting \033[0;33m${1}\033[0m to \033[0;33m${2}\033[0m"
+    gitProp=${1}
+    gitPropValue=${2}
+    printf "Setting \033[0;33m$gitProp\033[m to \033[0;33m$gitPropValue\033[m\n"
 }
 
 configure() { # --name NAME --email EMAIL --key KEY
@@ -50,7 +52,13 @@ configure() { # --name NAME --email EMAIL --key KEY
         git config --local --unset user.email || true
         git config --local --add user.email "${email}"
         if [[ -z ${key} ]]; then
-            key=$(gpg --list-key ${email} | awk '/^pub/{getline; print $1}')
+            osName=$(uname)
+            if [[ $osName = "Darwin" ]]; then
+                key=$(gpg --list-key "${email}" | awk '/^pub/{getline; print $1}')
+            else
+                keyRaw=$(gpg --list-keys --keyid-format LONG "${email}" | awk '/pub/{if (length($2) > 0) print $2}'); 
+                key=${keyRaw##*/}
+            fi
         fi
     fi
 
