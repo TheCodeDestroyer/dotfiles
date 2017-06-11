@@ -1,9 +1,6 @@
 #zmodload zsh/zprof
 
 source ~/.antigen/antigen.zsh
-source ~/.nvm/nvm.sh
-source ~/.rvm/scripts/rvm
-source <(npm completion)
 
 # Load the oh-my-zsh's library.
 antigen use oh-my-zsh
@@ -55,6 +52,11 @@ export PATH="/usr/local/heroku/bin:$PATH"
 ### RVM
 export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 
+
+### SOURCES
+source ~/.nvm/nvm.sh
+source ~/.rvm/scripts/rvm
+source <(npm completion)
 
 # FUNCTIONS
 function mkcdir
