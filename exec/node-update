@@ -18,6 +18,8 @@ fi
 
 nvm install stable --reinstall-packages-from="${OLD}"
 
+nvm alias stable $LATEST
+
 nvm alias default stable
 
 nvm uninstall "${OLD}"
