@@ -30,4 +30,4 @@
 	cmres	= reset HEAD~
 	latest 	= for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(committerdate:iso8601) %(refname:short)%(authorname)'
 [gpg]
-	program = gpg2
+	program = {{GPG_EXECUTABLE}}

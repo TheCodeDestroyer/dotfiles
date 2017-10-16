@@ -2,6 +2,34 @@
 
 #bin-update - A script that updates bin folder
 
+echo "==============UPADTING BIN EXECUTABLES & CONFIGS=============="
+
 cd ~/bin
 
-git pull --rebase && chmod +x ~/bin/exec/* && cp ~/bin/.zshrc ~/ && cp ~/bin/.npmrc ~/ && cp ~/bin/.gitconfig ~/
+if hash gpg2 2>/dev/null; then
+    GPG_EXECUTABLE_PATH=`which gpg2`
+else
+    GPG_EXECUTABLE_PATH=`which gpg`
+fi
+
+GPG_EXECUTABLE_NAME=`basename $GPG_EXECUTABLE_PATH`
+
+echo "Found GPG executable: $GPG_EXECUTABLE_NAME"
+
+if [[ -z $GPG_EXECUTABLE_NAME ]]
+then
+    echo "GPG executable not found. Exiting..."
+    exit 1
+fi
+
+echo "Updating repo..."
+git pull --rebase
+
+echo "Adding exectubale privilige to scripts..."
+chmod +x ~/bin/exec/* 
+
+cp ~/bin/.zshrc ~/ && echo "Copied .zshrc to ~/"
+cp ~/bin/.npmrc ~/ && echo "Copied .npmrc to ~/"
+cp ~/bin/.gitconfig ~/ && echo "Copied .gitconfig to ~/"
+
+sed -i "" "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
