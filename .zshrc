@@ -108,8 +108,6 @@ alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
 
 alias ghee-work="ghee set --email nace.logar@3fs.si"
 
-alias npm-upgrade-global="npm install -g $(ls -m $(npm -g prefix)/lib/node_modules | sed 's/,//g')"
-
 
 # Tell antigen that you're done.
 antigen apply
