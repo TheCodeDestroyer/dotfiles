@@ -54,11 +54,15 @@ export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 
 
 ### SOURCES
-source ~/.bash_profile
-source ~/.bash_login
-source ~/.nvm/nvm.sh
-source ~/.rvm/scripts/rvm
-source <(npm completion)
+source-file () {
+    [[ -f "$1" ]] && source "$1"
+}
+
+source-file ~/.bash_profile
+source-file ~/.bash_login
+source-file ~/.nvm/nvm.sh
+source-file ~/.rvm/scripts/rvm
+source-file <(npm completion)
 
 
 ### ENV INIT
