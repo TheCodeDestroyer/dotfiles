@@ -54,9 +54,12 @@ export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 
 
 ### SOURCES
+source ~/.bash_profile
+source ~/.bash_login
 source ~/.nvm/nvm.sh
 source ~/.rvm/scripts/rvm
 source <(npm completion)
+
 
 ### ENV INIT
 # NVM INIT
@@ -81,6 +84,9 @@ load-nvmrc() {
 add-zsh-hook chpwd load-nvmrc
 load-nvmrc
 
+# SSH INIT
+find ~/.ssh/ -type f -exec grep -l "PRIVATE" {} \; | xargs ssh-add &> /dev/null
+
 # FUNCTIONS
 function mkcdir
 {
@@ -89,18 +95,20 @@ function mkcdir
 
 function user-list
 {
-	cut -d: -f1 /etc/passwd
+  cut -d: -f1 /etc/passwd
 }
 
 function docker-dangling-volumes
 {
-	docker volume ls -f dangling=true
+  docker volume ls -f dangling=true
 }
 
 #ALIASES
 alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
 
 alias ghee-work="ghee set --email nace.logar@3fs.si"
+
+alias npm-upgrade-global="npm install -g $(ls -m $(npm -g prefix)/lib/node_modules | sed 's/,//g')"
 
 
 # Tell antigen that you're done.
