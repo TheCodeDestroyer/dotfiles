@@ -32,4 +32,13 @@ cp ~/bin/.zshrc ~/ && echo "Copied .zshrc to ~/"
 cp ~/bin/.npmrc ~/ && echo "Copied .npmrc to ~/"
 cp ~/bin/.gitconfig ~/ && echo "Copied .gitconfig to ~/"
 
-sed -i "" "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
+OS_NAME=`uname`
+
+if [[ $OS_NAME = "Darwin" ]]
+then
+    sed -i "" "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
+else
+    sed -i "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
+fi
+
+
