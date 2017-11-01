@@ -102,6 +102,21 @@ function user-list
   cut -d: -f1 /etc/passwd
 }
 
+function docker-remove-all-containers
+{
+  docker rm -f $(docker ps -a -q)
+}
+
+function docker-remove-all-images
+{
+  docker rmi -f $(docker images -q)
+}
+
+function docker-clean-everything
+{
+  docker-remove-all-containers && docker-remove-all-images
+}
+
 function docker-dangling-volumes
 {
   docker volume ls -f dangling=true
