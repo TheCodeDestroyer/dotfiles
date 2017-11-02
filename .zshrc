@@ -112,9 +112,14 @@ function docker-remove-all-images
   docker rmi -f $(docker images -q)
 }
 
+function docker-remove-all-services
+{
+  docker service rm $(docker service ls -q)
+}
+
 function docker-clean-everything
 {
-  docker-remove-all-containers && docker-remove-all-images
+  docker-remove-all-services && docker-remove-all-containers && docker-remove-all-images
 }
 
 function docker-dangling-volumes
