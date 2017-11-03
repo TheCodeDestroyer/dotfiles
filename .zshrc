@@ -122,7 +122,7 @@ function docker-remove-all-services
   docker service rm $(docker service ls -q)
 }
 
-docker-remove-dangling-volumes
+function docker-remove-dangling-volumes
 {
   docker volume rm $(docker volume ls -q -f dangling=true)
 }
