@@ -102,6 +102,11 @@ function user-list
   cut -d: -f1 /etc/passwd
 }
 
+function docker-dangling-volumes
+{
+  docker volume ls -f dangling=true
+}
+
 function docker-remove-all-containers
 {
   docker rm -f $(docker ps -a -q)
@@ -117,15 +122,16 @@ function docker-remove-all-services
   docker service rm $(docker service ls -q)
 }
 
-function docker-clean-everything
+docker-remove-dangling-volumes
 {
-  docker-remove-all-services && docker-remove-all-containers && docker-remove-all-images
+  docker volume rm $(docker volume ls -q -f dangling=true)
 }
 
-function docker-dangling-volumes
+function docker-clean-everything
 {
-  docker volume ls -f dangling=true
+  docker-remove-all-services && docker-remove-all-containers && docker-remove-all-images && docker-remove-dangling-volumes
 }
+
 
 #ALIASES
 alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
