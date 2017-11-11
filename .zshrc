@@ -129,7 +129,10 @@ function docker-remove-dangling-volumes
 
 function docker-clean-everything
 {
-  docker-remove-all-services && docker-remove-all-containers && docker-remove-all-images && docker-remove-dangling-volumes
+  docker-remove-all-services
+  docker-remove-all-containers
+  docker-remove-all-images
+  docker-remove-dangling-volumes
 }
 
 
