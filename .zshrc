@@ -43,6 +43,7 @@ export PATH=${PATH}:~/Work/software/android/sdk/tools
 export PATH=${PATH}:~/Work/software/android/sdk/platform-tools
 # home bin
 export PATH=~/bin/exec:$PATH
+export PATH=~/bin/exec/external:$PATH
 # user bin
 export PATH=/usr/local/bin:$PATH
 # node

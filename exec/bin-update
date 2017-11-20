@@ -6,6 +6,10 @@ echo "==============UPADTING BIN EXECUTABLES & CONFIGS=============="
 
 cd ~/bin
 
+BIN_LOCATION="$(pwd)"
+EXTERNAL_EXECS_PATH="$BIN_LOCATION/exec/external"
+NGROK_EXEC_PATH="$EXTERNAL_EXECS_PATH/ngrok"
+
 if hash gpg2 2>/dev/null; then
     GPG_EXECUTABLE_PATH=`which gpg2`
 else
@@ -32,7 +36,7 @@ cp ~/bin/.zshrc ~/ && echo "Copied .zshrc to ~/"
 cp ~/bin/.npmrc ~/ && echo "Copied .npmrc to ~/"
 cp ~/bin/.gitconfig ~/ && echo "Copied .gitconfig to ~/"
 
-OS_NAME=`uname`
+OS_NAME=$(uname)
 
 if [[ $OS_NAME = "Darwin" ]]
 then
@@ -41,4 +45,14 @@ else
     sed -i "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
 fi
 
+if [[ ! -f $NGROK_EXEC_PATH ]]
+then
+	echo "ngrok not found."
+	echo "Downloading file..."
 
+	echo $EXTERNAL_EXECS_PATH
+
+	wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip -P "$EXTERNAL_EXECS_PATH" && \
+	unzip "$EXTERNAL_EXECS_PATH/ngrok*.zip" -d "$EXTERNAL_EXECS_PATH" && \
+	find "$EXTERNAL_EXECS_PATH" -name "*.zip" | xargs rm
+fi
