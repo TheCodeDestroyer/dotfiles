@@ -4,6 +4,7 @@
 
 COMMAND=${1:-help}
 SHELL_CONFIG_FILE_NAME=".zshrc"
+JENKINS_JAR_PATH="./external/jenkins-cli.jar"
 
 commonConfirm() {
     MESSAGE=${1:-Is this correct?}
@@ -62,17 +63,15 @@ addJenkinsEnvVariablesToProfile() {
 
 enterJenkinsInfo() {
     read -p "Enter Jenkins URL: " JENKINS_URL
-    read -p "Enter path to Jenkins CLI jar: " JENKINS_JAR_PATH
 
     echo "Jenkins URL:" $JENKINS_URL
-    echo "Jenkins CLI jar path:" $JENKINS_JAR_PATH
 
     invertedConfirm && echo "Resetting Jenkins info..." && enterJenkinsInfo
 
     confirm "Do you want to store these variables?" && addJenkinsEnvVariablesToProfile
 }
 
-if [[ -z $ENV_JENKINS_URL ]] || [[ -z $ENV_JENKINS_JAR_PATH ]]
+if [[ -z $ENV_JENKINS_URL ]]
 then
         echo "Environment variables for Jenkins not detected!"
         echo "Entering environment variable setup..."
@@ -80,7 +79,6 @@ then
         enterJenkinsInfo
 else
 	JENKINS_URL=$ENV_JENKINS_URL
-	JENKINS_JAR_PATH=$ENV_JENKINS_JAR_PATH
 fi
 
 if [[ ! -f $JENKINS_JAR_PATH ]]
@@ -88,7 +86,7 @@ then
 	echo "jenkins-cli.jar not found."
 	echo "Downloading file..."
 
-	curl -v --create-dirs --url $JENKINS_URL/jnlpJars/jenkins-cli.jar --output $JENKINS_JAR_PATH
+	curl -v --create-dirs --url $JENKINS_URL/jnlpJars/jenkins-cli.jar --output $JENKINS_JAR_PATH 
 fi
 
 read -p "Enter Jenkins username: " JENKINS_USERNAME

@@ -50,3 +50,4 @@ fabric.properties
 # CUSTOM
 libs/
 .DS_Store
+exec/external
