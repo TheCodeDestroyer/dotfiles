@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+#swagger-codegen-cli - A wrapper script for swagger codegen cli jar
+
+cd ~/bin
+
+COMMAND=${1:-help}
+BIN_LOCATION="$(pwd)"
+EXTERNAL_EXECS_PATH="$BIN_LOCATION/exec/external"
+SWAGGER_CODEGEN_JAR_NAME="swagger-codegen-cli.jar"
+SWAGGER_CODEGEN_JAR_PATH="$EXTERNAL_EXECS_PATH/$SWAGGER_CODEGEN_JAR_NAME"
+
+if [[ ! -f $SWAGGER_CODEGEN_JAR_PATH ]]
+then
+	echo "swagger-codegen-cli.jar not found."
+	read -p "Enter version to download [2.2.3]: " SWAGGER_CODEGEN_VERSION
+
+	if [[ $SWAGGER_CODEGEN_VERSION == "" ]]
+	then
+		SWAGGER_CODEGEN_VERSION="2.2.3"
+	fi
+
+	echo "Downloading file..."
+
+	wget "http://central.maven.org/maven2/io/swagger/swagger-codegen-cli/$SWAGGER_CODEGEN_VERSION/swagger-codegen-cli-$SWAGGER_CODEGEN_VERSION.jar" \
+	-O "$EXTERNAL_EXECS_PATH/$SWAGGER_CODEGEN_JAR_NAME"
+fi
+
+java -jar $SWAGGER_CODEGEN_JAR_PATH $COMMAND
