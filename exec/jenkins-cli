@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 
-#jenkins-cli - A wrapper script for jenkins cli
+#jenkins-cli - A wrapper script for jenkins cli jar
+
+cd ~/bin
 
 COMMAND=${1:-help}
+BIN_LOCATION="$(pwd)"
+EXTERNAL_EXECS_PATH="$BIN_LOCATION/exec/external"
 SHELL_CONFIG_FILE_NAME=".zshrc"
-JENKINS_JAR_PATH="./external/jenkins-cli.jar"
+JENKINS_JAR_PATH="$EXTERNAL_EXECS_PATH/jenkins-cli.jar"
 
 commonConfirm() {
     MESSAGE=${1:-Is this correct?}
@@ -86,7 +90,7 @@ then
 	echo "jenkins-cli.jar not found."
 	echo "Downloading file..."
 
-	curl -v --create-dirs --url $JENKINS_URL/jnlpJars/jenkins-cli.jar --output $JENKINS_JAR_PATH 
+    wget $JENKINS_URL/jnlpJars/jenkins-cli.jar -P "$EXTERNAL_EXECS_PATH"
 fi
 
 read -p "Enter Jenkins username: " JENKINS_USERNAME

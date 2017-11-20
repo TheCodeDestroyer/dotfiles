@@ -52,7 +52,7 @@ then
 
 	echo $EXTERNAL_EXECS_PATH
 
-	wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip -P "$EXTERNAL_EXECS_PATH" && \
-	unzip "$EXTERNAL_EXECS_PATH/ngrok*.zip" -d "$EXTERNAL_EXECS_PATH" && \
+	wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip -O "$EXTERNAL_EXECS_PATH/ngrok.zip" && \
+	unzip "$EXTERNAL_EXECS_PATH/ngrok.zip" -d "$EXTERNAL_EXECS_PATH" && \
 	find "$EXTERNAL_EXECS_PATH" -name "*.zip" | xargs rm
 fi
