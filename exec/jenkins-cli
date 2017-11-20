@@ -4,7 +4,7 @@
 
 cd ~/bin
 
-COMMAND=${1:-help}
+COMMAND=${@:-help}
 BIN_LOCATION="$(pwd)"
 EXTERNAL_EXECS_PATH="$BIN_LOCATION/exec/external"
 SHELL_CONFIG_FILE_NAME=".zshrc"
