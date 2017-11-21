@@ -12,6 +12,7 @@
 	chk   	= checkout
 	ci   	= commit
 	cm   	= commit -m
+	cma   	= commit --amend
 	st   	= status
 	br   	= branch
 	brl 	= branch -a
