@@ -21,7 +21,7 @@
 	lg   	= log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %C(green)(%cr)%C(reset) %C(bold blue)<%an>%C(reset) - %C(cyan)%GS%C(reset) %C(cyan)(%G?)%C(reset)'
 	today	= log --since yesterday --author $(git config user.email) --pretty=short
 	slog 	= log --graph --all  --decorate --oneline
-	sig		= verify-commit HEAD^
+	sig		= verify-commit HEAD
 	stsig	= !echo G - valid, B - invalid, U - Unknown, X - good and expired, Y - good and expired key, R - good and revoked key, E - cannot be checked, N - no signature
 	rb   	= rebase
 	rbc  	= rebase --continue
