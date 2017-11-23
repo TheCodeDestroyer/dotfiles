@@ -89,9 +89,6 @@ load-nvmrc() {
 add-zsh-hook chpwd load-nvmrc
 load-nvmrc
 
-# SSH INIT
-find ~/.ssh/ -type f -exec grep -l "PRIVATE" {} \; | xargs ssh-add &> /dev/null
-
 # FUNCTIONS
 function mkcdir
 {
