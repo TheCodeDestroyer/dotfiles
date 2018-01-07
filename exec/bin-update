@@ -17,6 +17,7 @@ else
 fi
 
 GPG_EXECUTABLE_NAME=`basename $GPG_EXECUTABLE_PATH`
+echo "NAME: $GPG_EXECUTABLE_NAME"
 
 echo "Found GPG executable: $GPG_EXECUTABLE_NAME"
 
@@ -42,7 +43,7 @@ if [[ $OS_NAME = "Darwin" ]]
 then
     sed -i "" "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
 else
-    sed -i "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
+    sed -i "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated: $GPG_EXECUTABLE_NAME"
 fi
 
 if [[ ! -f $NGROK_EXEC_PATH ]]
