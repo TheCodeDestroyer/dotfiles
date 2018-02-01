@@ -7,7 +7,6 @@
 [push]
 	default = nothing
 [alias]
-	alias 	= config --get-regexp ^alias\\.
 	dic   	= diff --cached
 	chk   	= checkout
 	ci   	= commit
