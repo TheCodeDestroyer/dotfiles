@@ -24,7 +24,6 @@ antigen bundle bundler
 antigen bundle yonchu/grunt-zsh-completion
 antigen bundle zsh-users/zsh-completions src
 antigen bundle zsh-users/zsh-syntax-highlighting
-antigen bundle kennethreitz/autoenv
 antigen bundle command-not-found
 antigen bundle history
 antigen bundle sprunge
@@ -67,6 +66,9 @@ source-file <(npm completion)
 
 
 ### ENV INIT
+# DIR ENV
+eval "$(direnv hook zsh)"
+
 # NVM INIT
 autoload -U add-zsh-hook
 load-nvmrc() {
