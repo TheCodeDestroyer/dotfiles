@@ -31,6 +31,7 @@ antigen bundle fabric
 antigen bundle heroku
 antigen bundle docker
 antigen bundle docker-compose
+antigen bundle git-extras
 
 # Load the theme.
 antigen theme bira
