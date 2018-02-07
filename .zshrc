@@ -128,12 +128,18 @@ function docker-remove-dangling-volumes
   docker volume rm $(docker volume ls -q -f dangling=true)
 }
 
+function docker-remove-all-secrets
+{
+  docker secret rm $(docker secret ls -q)
+}
+
 function docker-clean-everything
 {
   docker-remove-all-services
   docker-remove-all-containers
   docker-remove-all-images
   docker-remove-dangling-volumes
+  docker-remove-all-secrets
 }
 
 
