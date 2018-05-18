@@ -6,7 +6,7 @@
 
 OLD="$(nvm current)"
 
-LATEST="$(curl -s http://nodejs.org/dist/ -o - | grep 'v[0-9].*' | sort | sed -e 's/.*node-//' -e 's/\.tar\.gz.*//' -e 's/<[^>]*>//' -e 's/\/<[^>]*>.*//' -e '$!d')"
+LATEST="$(curl -s http://nodejs.org/dist/ -o - | grep 'v[0-9].*' | sort -V | sed -e 's/.*node-//' -e 's/\.tar\.gz.*//' -e 's/<[^>]*>//' -e 's/\/<[^>]*>.*//' -e '$!d')"
 
 echo "Old version: ${OLD}"
 echo "Latest version: ${LATEST}"

@@ -32,6 +32,8 @@ antigen bundle heroku
 antigen bundle docker
 antigen bundle docker-compose
 antigen bundle git-extras
+antigen bundle kubectl
+antigen bundle minikube
 
 # Load the theme.
 antigen theme bira
@@ -63,7 +65,6 @@ source-file ~/.bash_profile
 source-file ~/.bash_login
 source-file ~/.nvm/nvm.sh
 source-file ~/.rvm/scripts/rvm
-source-file <(npm completion)
 
 
 ### ENV INIT
@@ -133,6 +134,11 @@ function docker-remove-all-secrets
   docker secret rm $(docker secret ls -q)
 }
 
+function zsh-is-stupid
+{
+  echo I am stupid
+}
+
 function docker-clean-everything
 {
   docker-remove-all-services
@@ -147,7 +153,6 @@ function docker-clean-everything
 alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
 
 alias ghee-work="ghee set --email nace.logar@3fs.si"
-
 
 # Tell antigen that you're done.
 antigen apply
