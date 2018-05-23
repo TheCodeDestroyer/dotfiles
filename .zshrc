@@ -146,6 +146,90 @@ function docker-clean-everything
   docker-remove-all-images
   docker-remove-dangling-volumes
   docker-remove-all-secrets
+}function docker-check-proper-format
+{
+  FORMAT=${1:-}
+  FORMAT_FOR=${2:-container}
+  if [[ -z $FORMAT ]]
+  then
+    if [[ $FORMAT_FOR == "container" ]]
+    then
+      echo "INFO:"
+      echo "Format not provided."
+      echo "Some example container formats: {{.ID}}, {{.Image }}, {{.Command }}, {{.CreatedAt }}, {{.RunningFor }}, {{.Ports }}, {{.Status }}, {{.Size }}, {{.Names }}, {{.Labels}}, {{.Label}}, {{.Mounts}}, {{.Networks}}"
+    fi
+    if [[ $FORMAT_FOR == "image" ]]
+    then
+      echo "INFO:"
+      echo "Format not provided."
+      echo "Some example image formats: {{.ID}}, {{.Repository}}, {{.Tag}}, {{.Digest}}, {{.CreatedSince}}, {{.CreatedAt}}, {{.Size}}"
+    fi
+  fi
+  echo $FORMAT
+}
+
+function docker-check-proper-filter
+{
+  FILTER_REF=""
+  FILTER=${1:-}
+  FORMAT_FOR=${2:-container}
+  
+  if [[ ! -z $FILTER ]]
+  then
+    
+    if [[ $FORMAT_FOR == "container" ]]
+    then
+      FILTER_REF="name=$FILTER"
+    fi
+    if [[ $FORMAT_FOR == "image" ]]
+    then
+      FILTER_REF="reference=$FILTER"
+    fi
+  fi
+
+  echo $FILTER_REF
+}
+
+function docker-get-container-by
+{
+  FILTER_REF="$(docker-check-proper-filter $1)"
+  FORMAT=$(docker-check-proper-format $2)
+  docker ps -a --filter="$FILTER_REF" --format="$FORMAT" | sed -n 1p
+}
+
+function docker-get-image-attribute
+{
+  FILTER_REF=$(docker-check-proper-filter $1 "image")
+  FORMAT=$(docker-check-proper-format $2 "image")
+
+  docker images --all --filter="$FILTER_REF" --format="$FORMAT" | sed -n 1p
+}
+
+function docker-run
+{
+  IMAGE_NAME=$1
+  COMMAND_TO_RUN=${2:-bash}
+  LOCAL_TAG=$(docker-get-image-attribute $IMAGE_NAME "{{.Tag}}")
+  RUNNING_CONTAINER_NAME=$(docker-get-container-by $IMAGE_NAME "{{.Names}}")
+  RUNNING_CONTAINER_STATUS=$(docker-get-container-by $IMAGE_NAME "{{.Status}}")
+  if [[ $RUNNING_CONTAINER_STATUS = *"Exited"* ]]
+  then
+    echo "Removing dead container..."
+    docker rm $RUNNING_CONTAINER_NAME
+    RUNNING_CONTAINER_NAME=""
+  fi
+
+  if [[ -z $RUNNING_CONTAINER_NAME  ]]
+  then
+    echo "Creating new container"
+    echo "IMAGE NAME: $IMAGE_NAME"
+    echo "LOCAL TAG: $LOCAL_TAG"
+    echo "COMMAND TO RUN: $COMMAND_TO_RUN"
+    docker run --name $IMAGE_NAME -it $IMAGE_NAME:$LOCAL_TAG $COMMAND_TO_RUN
+  else
+    echo "Container already exists. Attaching..."
+    docker exec -it $RUNNING_CONTAINER_NAME
+  fi
 }
 
 
