@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+##################################################################
+#   Used for listing remote (Gitlab) branches with optional      #
+#   case insensitive filtering.                                  #
+#                                                                #
+#   How to use:                                                  #
+#                                                                #
+#   ./branch-authors.sh [filter] [remote name] [code directory]  #
+#                                                                #
+#   Defaults:                                                    #
+#   - remote:         upstream                                   #
+#   - code directory: current dir (.)                            #
+#                                                                #
+#   e.g.:                                                        #
+#   ./branch-authors                                             #
+#   ./branch-authors Samo                                        #
+#   ./branch-authors Samo upstream                               #
+#   ./branch-authors Samo upstream ../iot-accelerator            #
+#                                                                #
+##################################################################
+
+# Set filter from parameter.
+FILTER=${1:-}
+
+# Set git source from parameter (default: upstream).
+GIT_SOURCE=${2:-"upstream"}
+
+# Set code (git repo) location from parameter (default: current directory).
+CODE_DIR=${3:-"."}
+
+# Fetch latest changes.
+git fetch "$GIT_SOURCE"
+
+# List all gitlab branches.
+BRANCHES=$(git -C "$CODE_DIR" branch -r --no-color | grep "$GIT_SOURCE")
+
+while read -r BRANCH_NAME; do
+    # Add author of the last commit to the output and filter it if filter is set.
+    LAST_AUTHOR=$(git -C "$CODE_DIR" show "$BRANCH_NAME" --pretty=format:"%an" --no-patch)
+    echo "$BRANCH_NAME" "($LAST_AUTHOR)" | grep -i "$FILTER" || true
+done <<< "$BRANCHES"
