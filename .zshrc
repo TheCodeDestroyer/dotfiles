@@ -134,11 +134,6 @@ function docker-remove-all-secrets
   docker secret rm $(docker secret ls -q)
 }
 
-function zsh-is-stupid
-{
-  echo I am stupid
-}
-
 function docker-clean-everything
 {
   docker-remove-all-services
@@ -146,7 +141,9 @@ function docker-clean-everything
   docker-remove-all-images
   docker-remove-dangling-volumes
   docker-remove-all-secrets
-}function docker-check-proper-format
+}
+
+function docker-check-proper-format
 {
   FORMAT=${1:-}
   FORMAT_FOR=${2:-container}
