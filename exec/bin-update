@@ -2,7 +2,11 @@
 
 #bin-update - A script that updates bin folder
 
-echo "==============UPADTING BIN EXECUTABLES & CONFIGS=============="
+echo
+echo "================================================================"
+echo "============== UPDATING BIN EXECUTABLES & CONFIGS =============="
+echo "================================================================"
+echo
 
 cd ~/bin
 
