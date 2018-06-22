@@ -10,24 +10,26 @@
 	dic   	= diff --cached
 	chk   	= checkout
 	ci   	= commit
-	cm   	= commit -m
+	cm   	= commit --message
 	cma   	= commit --amend
+	cmres	= reset HEAD~
 	st   	= status
+	discard = "!f() { git add . && git stash && git stash drop stash@{0}; }; f"
 	br   	= branch
-	brl 	= branch -a
+	brl 	= branch --all
 	sta 	= stash
 	stal 	= stash list
 	lg   	= log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %C(green)(%cr)%C(reset) - author: %C(bold blue)%an <%ae>%C(reset), commiter: %C(bold blue)%cn <%ce>%C(reset) - %C(cyan)%GS%C(reset) %C(cyan)(%G?)%C(reset)'
+	lgs 	= log --graph --all  --decorate --oneline
 	today	= log --since yesterday --author $(git config user.email) --pretty=short
-	slog 	= log --graph --all  --decorate --oneline
 	sig		= verify-commit HEAD
 	stsig	= !echo G - valid, B - invalid, U - Unknown, X - good and expired, Y - good and expired key, R - good and revoked key, E - cannot be checked, N - no signature
 	rb   	= rebase
 	rbc  	= rebase --continue
 	rba  	= rebase --abort
-	rbi  	= rebase -i
+	rbs  	= rebase --skip
+	rbi  	= rebase --interactive
 	fap  	= fetch --all --prune --progress
-	cmres	= reset HEAD~
 	latest 	= for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(committerdate:iso8601) %(refname:short)%(authorname)'
 [gpg]
 	program = {{GPG_EXECUTABLE}}
