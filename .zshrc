@@ -1,43 +1,5 @@
 #zmodload zsh/zprof
 
-source ~/.antigen/antigen.zsh
-
-# Load the oh-my-zsh's library.
-antigen use oh-my-zsh
-
-# Bundles
-antigen bundle git
-antigen bundle github
-antigen bundle debian
-antigen bundle pip
-antigen bundle python
-antigen bundle rsync
-antigen bundle node
-antigen bundle npm
-antigen bundle rake
-antigen bundle gem
-antigen bundle gradle
-antigen bundle sublime
-antigen bundle sudo
-antigen bundle rvm
-antigen bundle bundler
-antigen bundle yonchu/grunt-zsh-completion
-antigen bundle zsh-users/zsh-completions src
-antigen bundle zsh-users/zsh-syntax-highlighting
-antigen bundle command-not-found
-antigen bundle history
-antigen bundle sprunge
-antigen bundle fabric
-antigen bundle heroku
-antigen bundle docker
-antigen bundle docker-compose
-antigen bundle git-extras
-antigen bundle kubectl
-antigen bundle minikube
-
-# Load the theme.
-antigen theme bira
-
 # ENV
 # android
 export ANDROID_HOME=~/Work/software/android/sdk
@@ -51,10 +13,51 @@ export PATH=/usr/local/bin:$PATH
 # node
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 ### Added by the Heroku Toolbelt
-export PATH="/usr/local/heroku/bin:$PATH"
+#export PATH="/usr/local/heroku/bin:$PATH"
 ### RVM
 export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 
+source ~/.antigen/antigen.zsh
+
+# Load the oh-my-zsh's library.
+antigen use oh-my-zsh
+
+# Bundles
+antigen bundle zsh-users/zsh-completions
+antigen bundle zsh-users/zsh-syntax-highlighting
+antigen bundle command-not-found
+antigen bundle history
+antigen bundle debian
+antigen bundle sudo
+antigen bundle git
+antigen bundle nvm
+antigen bundle node
+antigen bundle npm
+antigen bundle yarn
+
+antigen bundle pip
+antigen bundle python
+antigen bundle rsync
+antigen bundle rake
+antigen bundle gem
+antigen bundle gradle
+antigen bundle sublime
+antigen bundle bundler
+antigen bundle sprunge
+antigen bundle fabric
+antigen bundle heroku
+antigen bundle github
+antigen bundle docker
+antigen bundle docker-compose
+antigen bundle git-extras
+antigen bundle kubectl
+antigen bundle minikube
+
+# Load the theme.
+antigen theme bira
+
+# Tell antigen that you're done.
+antigen apply
 
 ### SOURCES
 source-file () {
@@ -63,9 +66,9 @@ source-file () {
 
 source-file ~/.bash_profile
 source-file ~/.bash_login
-source-file ~/.nvm/nvm.sh
 source-file ~/.rvm/scripts/rvm
-
+source <(kubectl completion zsh)
+source <(minikube completion zsh)
 
 ### ENV INIT
 # DIR ENV
@@ -234,8 +237,5 @@ function docker-run
 alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
 
 alias ghee-work="ghee set --email nace.logar@3fs.si"
-
-# Tell antigen that you're done.
-antigen apply
 
 #zprof
