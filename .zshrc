@@ -137,6 +137,11 @@ function docker-remove-all-secrets
   docker secret rm $(docker secret ls -q)
 }
 
+function docker-remove-all-configs
+{
+  docker config rm $(docker config ls -q)
+}
+
 function docker-clean-everything
 {
   docker-remove-all-services
@@ -144,6 +149,7 @@ function docker-clean-everything
   docker-remove-all-images
   docker-remove-dangling-volumes
   docker-remove-all-secrets
+  docker-remove-all-configs
 }
 
 function docker-check-proper-format
