@@ -68,7 +68,6 @@ source-file ~/.bash_profile
 source-file ~/.bash_login
 source-file ~/.rvm/scripts/rvm
 source <(kubectl completion zsh)
-source <(minikube completion zsh)
 
 ### ENV INIT
 # DIR ENV
