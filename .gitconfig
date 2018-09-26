@@ -6,6 +6,8 @@
 	gpgsign = true
 [push]
 	default = nothing
+[pager]
+	branch = false
 [alias]
 	dic   	= diff --cached
 	chk   	= checkout
@@ -18,10 +20,13 @@
 	br   	= branch
 	brl 	= branch --all
 	sta 	= stash
+	stap 	= stash pop
+	stac 	= stash clear
 	stal 	= stash list
 	lg   	= log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %C(green)(%cr)%C(reset) - author: %C(bold blue)%an <%ae>%C(reset), commiter: %C(bold blue)%cn <%ce>%C(reset) - %C(cyan)%GS%C(reset) %C(cyan)(%G?)%C(reset)'
 	lgs 	= log --graph --all  --decorate --oneline
 	today	= !git log --since yesterday --author $(git config user.email) --pretty=short
+	worklog = !git log --reflog --author $(git config user.email) --pretty='format:%cd  %h  %s'
 	sig		= verify-commit HEAD
 	stsig	= !echo G - valid, B - invalid, U - Unknown, X - good and expired, Y - good and expired key, R - good and revoked key, E - cannot be checked, N - no signature
 	rb   	= rebase
