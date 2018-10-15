@@ -25,8 +25,9 @@
 	stal 	= stash list
 	lg   	= log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %C(green)(%cr)%C(reset) - author: %C(bold blue)%an <%ae>%C(reset), commiter: %C(bold blue)%cn <%ce>%C(reset) - %C(cyan)%GS%C(reset) %C(cyan)(%G?)%C(reset)'
 	lgs 	= log --graph --all  --decorate --oneline
-	today	= !git log --since yesterday --author $(git config user.email) --pretty=short
-	worklog = !git log --reflog --author $(git config user.email) --pretty='format:%cd  %h  %s'
+	today	= !git log --reflog --since yesterday --author $(git config user.email) --pretty='format:%C(green)%cd%C(reset) %C(red)%h%C(reset) %s'
+	worklog = !git log --reflog --author $(git config user.email) --pretty='format:%C(green)%cd%C(reset) %C(red)%h%C(reset) %s'
+	latest 	= for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(color:green)%(committerdate:iso8601)%(color:reset) %(color:red)%(refname:short)%(color:reset) %(color:cyan)%(authorname)%(color:reset)'
 	sig		= verify-commit HEAD
 	stsig	= !echo G - valid, B - invalid, U - Unknown, X - good and expired, Y - good and expired key, R - good and revoked key, E - cannot be checked, N - no signature
 	rb   	= rebase
@@ -35,6 +36,5 @@
 	rbs  	= rebase --skip
 	rbi  	= rebase --interactive
 	fap  	= fetch --all --prune --progress
-	latest 	= for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(committerdate:iso8601) %(refname:short)%(authorname)'
 [gpg]
 	program = {{GPG_EXECUTABLE}}
