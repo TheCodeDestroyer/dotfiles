@@ -11,6 +11,7 @@
 [alias]
 	dic   	= diff --cached
 	chk   	= checkout
+	chkr	= "!f() { git checkout -b $1 ${2:-origin}/$1; }; f"
 	ci   	= commit
 	cm   	= commit --message
 	cma   	= commit --amend
@@ -19,9 +20,11 @@
 	discard = "!f() { git add . && git stash && git stash drop stash@{0}; }; f"
 	br   	= branch
 	brl 	= branch --all
+	brd   	= branch -D
 	sta 	= stash
 	stap 	= stash pop
 	stac 	= stash clear
+	stad 	= stash drop stash@{0}
 	stal 	= stash list
 	lg   	= log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %C(green)(%cr)%C(reset) - author: %C(bold blue)%an <%ae>%C(reset), commiter: %C(bold blue)%cn <%ce>%C(reset) - %C(cyan)%GS%C(reset) %C(cyan)(%G?)%C(reset)'
 	lgs 	= log --graph --all  --decorate --oneline
