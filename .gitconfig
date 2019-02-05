@@ -15,6 +15,7 @@
 	ci   	= commit
 	cm   	= commit --message
 	cma   	= commit --amend
+	ff		= "!f() { git merge --ff-only origin/${1:-NO_SOURCE_BRANCH}; }; f"
 	cmres	= reset HEAD~
 	st   	= status
 	discard = "!f() { git add . && git stash && git stash drop stash@{0}; }; f"
