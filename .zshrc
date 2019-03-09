@@ -52,6 +52,7 @@ antigen bundle docker-compose
 antigen bundle git-extras
 antigen bundle kubectl
 antigen bundle minikube
+antigen bundle ansible
 
 # Load the theme.
 antigen theme bira
