@@ -16,6 +16,8 @@ export NODE_TLS_REJECT_UNAUTHORIZED=0
 #export PATH="/usr/local/heroku/bin:$PATH"
 ### RVM
 export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
+### Ansible
+export ANSIBLE_NOCOWS=1
 
 source ~/.antigen/antigen.zsh
 
