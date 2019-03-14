@@ -5,11 +5,11 @@
 export ANDROID_HOME=~/Work/software/android/sdk
 export PATH=${PATH}:~/Work/software/android/sdk/tools
 export PATH=${PATH}:~/Work/software/android/sdk/platform-tools
-# home bin
+# common
 export PATH=~/bin/exec:$PATH
 export PATH=~/bin/exec/external:$PATH
-# user bin
 export PATH=/usr/local/bin:$PATH
+export EDITOR=nano
 # node
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 ### Added by the Heroku Toolbelt
