@@ -18,6 +18,7 @@
 	ff		= "!f() { git merge --ff-only origin/${1:-NO_SOURCE_BRANCH}; }; f"
 	cmres	= reset HEAD~
 	st   	= status
+	stco 	= "!f() { git --no-pager diff --oneline --shortstat ${1:-NO_SOURCE_BRANCH}; }; f"
 	discard = "!f() { git add . && git stash && git stash drop stash@{0}; }; f"
 	br   	= branch
 	brl 	= branch --all
