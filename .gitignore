@@ -31,3 +31,5 @@ fabric.properties
 libs/
 .DS_Store
 exec/external
+
+node_modules
