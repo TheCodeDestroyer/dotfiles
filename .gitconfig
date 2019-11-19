@@ -23,6 +23,7 @@
 	br   	= branch
 	brl 	= branch --all
 	brd   	= branch -D
+	brdres 	= "!f() { git reset --hard origin/${1:-NO_SOURCE_BRANCH}; }; f"
 	sta 	= stash
 	stap 	= stash pop
 	stac 	= stash clear
