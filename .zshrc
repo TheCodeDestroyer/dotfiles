@@ -247,4 +247,6 @@ alias ghee-work="ghee set --email nace.logar@3fs.si"
 
 alias ls='f() { exa $@ };f'
 
+alias scan-code="cloc --exclude-dir=$(tr '\n' ',' < ~/.clocignore) ./"
+
 #zprof
