@@ -12,6 +12,7 @@ export PATH=/usr/local/bin:$PATH
 export EDITOR=nano
 # node
 export NODE_TLS_REJECT_UNAUTHORIZED=0
+export NVM_LAZY_LOAD=true
 ### Added by the Heroku Toolbelt
 #export PATH="/usr/local/heroku/bin:$PATH"
 ### RVM
