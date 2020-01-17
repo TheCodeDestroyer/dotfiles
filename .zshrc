@@ -29,6 +29,7 @@ antigen use oh-my-zsh
 antigen bundle zsh-users/zsh-completions
 antigen bundle zdharma/fast-syntax-highlighting
 antigen bundle command-not-found
+antigen bundle MichaelAquilina/zsh-you-should-use
 antigen bundle history
 antigen bundle debian
 antigen bundle sudo
