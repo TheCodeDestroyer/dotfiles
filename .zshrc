@@ -27,34 +27,31 @@ antigen use oh-my-zsh
 
 # Bundles
 antigen bundle zsh-users/zsh-completions
-antigen bundle zsh-users/zsh-syntax-highlighting
+antigen bundle zdharma/fast-syntax-highlighting
 antigen bundle command-not-found
 antigen bundle history
 antigen bundle debian
 antigen bundle sudo
-antigen bundle git
+antigen bundle gitfast
 antigen bundle nvm
 antigen bundle node
 antigen bundle npm
 antigen bundle yarn
+antigen bundle colored-man-pages
+antigen bundle sprunge
+antigen bundle sublime
 
 antigen bundle pip
 antigen bundle python
-antigen bundle rsync
-antigen bundle rake
 antigen bundle gem
 antigen bundle gradle
-antigen bundle sublime
 antigen bundle bundler
-antigen bundle sprunge
-antigen bundle fabric
 antigen bundle heroku
 antigen bundle github
 antigen bundle docker
 antigen bundle docker-compose
 antigen bundle git-extras
 antigen bundle kubectl
-antigen bundle minikube
 antigen bundle ansible
 
 # Load the theme.
