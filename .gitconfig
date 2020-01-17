@@ -1,13 +1,14 @@
 [core]
-	editor = nano
+	editor		= nano
+	fileMode	= false
 [user]
-	name = Nace Logar
+	name	= Nace Logar
 [commit]
 	gpgsign = true
 [push]
 	default = nothing
 [pager]
-	branch = false
+	branch 	= false
 [alias]
 	dic   	= diff --cached
 	chk   	= checkout
