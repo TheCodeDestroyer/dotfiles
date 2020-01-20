@@ -19,6 +19,8 @@ export NVM_LAZY_LOAD=true
 export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 ### Ansible
 export ANSIBLE_NOCOWS=1
+### ZHS Stuff
+export YSU_IGNORED_ALIASES=("y" "st")
 
 source ~/.antigen/antigen.zsh
 
@@ -68,7 +70,6 @@ source-file () {
 
 source-file ~/.bash_profile
 source-file ~/.bash_login
-source-file ~/.rvm/scripts/rvm
 source <(kubectl completion zsh)
 
 ### ENV INIT
