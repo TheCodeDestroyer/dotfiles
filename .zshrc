@@ -13,10 +13,7 @@ export EDITOR=nano
 # node
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 export NVM_LAZY_LOAD=true
-### Added by the Heroku Toolbelt
-#export PATH="/usr/local/heroku/bin:$PATH"
-### RVM
-export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
+export PATH=~/.yarn/bin:$PATH
 ### Ansible
 export ANSIBLE_NOCOWS=1
 ### ZHS Stuff
