@@ -43,5 +43,6 @@
 	rbs  	= rebase --skip
 	rbi  	= rebase --interactive
 	fap  	= fetch --all --prune --progress
+	alias 	= !git config --get-regexp ^alias\\. | sed -e s/^alias\\.// -e s/\\ /\\ =\\ /
 [gpg]
 	program = {{GPG_EXECUTABLE}}
