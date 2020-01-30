@@ -34,6 +34,7 @@
 	lgs 	= log --graph --all  --decorate --oneline
 	today	= !git log --reflog --since yesterday --author $(git config user.email) --pretty='format:%C(green)%cd%C(reset) %C(red)%h%C(reset) %s'
 	worklog = !git log --reflog --author $(git config user.email) --pretty='format:%C(green)%cd%C(reset) %C(red)%h%C(reset) %s'
+	chlog 	= log --color --graph --pretty=format:'-%C(yellow)%d%Creset %s' --abbrev-commit
 	latest 	= for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(color:green)%(committerdate:iso8601)%(color:reset) %(color:red)%(refname:short)%(color:reset) %(color:cyan)%(authorname)%(color:reset)'
 	sig		= verify-commit HEAD
 	stsig	= !echo G - valid, B - invalid, U - Unknown, X - good and expired, Y - good and expired key, R - good and revoked key, E - cannot be checked, N - no signature
