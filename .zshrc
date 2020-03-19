@@ -16,6 +16,8 @@ export NVM_LAZY_LOAD=true
 export PATH=~/.yarn/bin:$PATH
 ### Ansible
 export ANSIBLE_NOCOWS=1
+### Go
+export PATH=~/go/bin:$PATH
 ### ZHS Stuff
 export YSU_IGNORED_ALIASES=("y" "st")
 
