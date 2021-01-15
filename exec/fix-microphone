@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+#fix-microphone - A script that fixes muted microphone
+
+amixer -c 1 sset Mic cap
+amixer -c 1 sset Mic nocap
+amixer -c 1 sset Mic toggle
