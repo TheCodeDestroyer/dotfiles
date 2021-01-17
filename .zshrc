@@ -11,7 +11,6 @@ export PATH=~/bin/exec/external:$PATH
 export PATH=/usr/local/bin:$PATH
 export EDITOR=nano
 # node
-export NODE_TLS_REJECT_UNAUTHORIZED=0
 export NVM_LAZY_LOAD=true
 export PATH=~/.yarn/bin:$PATH
 ### Ansible
