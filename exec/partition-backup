@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# partition-backup - A script that backups the partition
+
+echo "Specify block device name:"
+
+read BLOCK_DEVICE_NAME
+
+echo "Is this the correct device: /dev/$BLOCK_DEVICE_NAME (Y/n)"
+
+read ANSWER
+
+if [ "$ANSWER" == "n" ]; then
+   exit 0
+fi
+
+IMG_SIZE="$(sudo blockdev --getsize64 /dev/$BLOCK_DEVICE_NAME)"
+DATE_STAMP=$(date '+%Y-%d-%m')
+
+
+echo "Type of backup: (GZIP/img)"
+
+read BACKUP_TYPE
+
+if [ "$BACKUP_TYPE" == "img" ]
+then
+	sudo dd bs=4M if=/dev/$BLOCK_DEVICE_NAME | pv --rate --bytes --progress --size $IMG_SIZE --eta | dd of=raspbian-$DATE_STAMP.img
+else
+	sudo dd bs=4M if=/dev/$BLOCK_DEVICE_NAME | pv --rate --bytes --progress --size $IMG_SIZE --eta | gzip > rasbian.img-$DATE_STAMP.gz
+fi
