@@ -7,6 +7,8 @@ fi
 
 source ~/.zplug/init.zsh
 
+# COMMANDS
+zplug "clvv/fasd", as:command
 
 # PLUGINS
 
@@ -37,19 +39,26 @@ zplug "plugins/docker-compose", from:oh-my-zsh
 zplug "plugins/ansible", from:oh-my-zsh
 zplug "plugins/encode64", from:oh-my-zsh
 zplug "plugins/extract", from:oh-my-zsh
+zplug "plugins/fasd", from:oh-my-zsh
+zplug "plugins/kubectl", from:oh-my-zsh
+zplug "plugins/helm", from:oh-my-zsh
 
 # Debian
 zplug "plugins/debian", from:oh-my-zsh, if:"[[ $OSTYPE == *linux* ]]"
 # OSX
 zplug "plugins/osx", from:oh-my-zsh, if:"[[ $OSTYPE == *darwin* ]]"
 
+# COMMANDS
+zplug "clvv/fasd", as:command
 
 # THEME
 zplug "romkatv/powerlevel10k", as:theme, depth:1
 
 
 # INIT
-zplug load #--verbose
+if zplug check || zplug install; then
+  zplug load #--verbose
+fi
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
@@ -59,15 +68,16 @@ if zplug check zsh-users/zsh-history-substring-search; then
     bindkey "$terminfo[kcud1]" history-substring-search-down
 fi
 
-if ! zplug check; then
-    zplug install
-fi
-
 #ALIASES
 alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
 alias ghee-work="ghee set --email nace.logar@3fs.si"
 
 alias ls='lsd'
+
+alias c='z'
+alias opn='a -e xdg-open'
+alias edt='f -e "$EDITOR"'
+
 
 alias scan-code="cloc --exclude-dir=$(tr '\n' ',' < ~/.clocignore) ./"
 

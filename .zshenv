@@ -18,7 +18,7 @@ export HISTFILE="${HOME}/.zsh_history"
 export HISTSIZE=10000
 export SAVEHIST=10000
 ### ZHS plugin stuff
-export ZSH_PLUGINS_ALIAS_TIPS_EXCLUDES="g st"
+export ZSH_PLUGINS_ALIAS_TIPS_EXCLUDES="g st y"
 export ZSH_PLUGINS_ALIAS_TIPS_TEXT="You should use: "
 # android
 export ANDROID_HOME=~/Work/software/android/sdk
