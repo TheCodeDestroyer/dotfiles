@@ -11,6 +11,7 @@
 	branch 	= false
 [alias]
 	dic   	= diff --cached
+	patch   = "!f() { git dic > ${1-diff}.patch; }; f"
 	chk   	= checkout
 	chkr	= "!f() { git checkout -b $1 ${2:-origin}/$1; }; f"
 	ci   	= commit
