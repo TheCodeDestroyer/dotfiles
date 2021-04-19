@@ -42,6 +42,7 @@ zplug "plugins/extract", from:oh-my-zsh
 zplug "plugins/fasd", from:oh-my-zsh
 zplug "plugins/kubectl", from:oh-my-zsh
 zplug "plugins/helm", from:oh-my-zsh
+zplug "plugins/httpie", from:oh-my-zsh
 
 # Debian
 zplug "plugins/debian", from:oh-my-zsh, if:"[[ $OSTYPE == *linux* ]]"

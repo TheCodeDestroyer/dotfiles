@@ -1,25 +1,5 @@
-#!/usr/bin/env bash
+#!/usr/bin/env zsh
 
-#node-update - A script to handle NodeJS Update process
+# node-update - A script to handle NodeJS Update process
 
-. ~/.nvm/nvm.sh
-
-OLD="$(nvm current)"
-
-LATEST="$(curl -s http://nodejs.org/dist/ -o - | grep 'v[0-9].*' | sort -V | sed -e 's/.*node-//' -e 's/\.tar\.gz.*//' -e 's/<[^>]*>//' -e 's/\/<[^>]*>.*//' -e '$!d')"
-
-echo "Old version: ${OLD}"
-echo "Latest version: ${LATEST}"
-
-if [[ $OLD == $LATEST ]]; then
-    echo "Already latest version"
-    exit
-fi
-
-nvm install stable --reinstall-packages-from="${OLD}"
-
-nvm alias stable $LATEST
-
-nvm alias default stable
-
-nvm uninstall "${OLD}"
+python ~/bin/exec/check-nvm-lts.py | zsh

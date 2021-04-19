@@ -27,6 +27,8 @@ export PATH=${PATH}:~/Work/software/android/sdk/platform-tools
 # node
 export NVM_LAZY_LOAD=true
 export PATH=~/.yarn/bin:$PATH
+# python
+export PATH=~/.local/bin:$PATH
 ### Ansible
 export ANSIBLE_NOCOWS=1
 ### Go
