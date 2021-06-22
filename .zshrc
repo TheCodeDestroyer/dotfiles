@@ -21,6 +21,7 @@ zplug "djui/alias-tips"
 zplug "Peltoche/lsd"
 zplug "manlao/zsh-auto-nvm", defer:3
 zplug "ptavares/zsh-direnv", defer:3
+zplug "mattberther/zsh-pyenv", defer:3
 
 zplug "plugins/history", from:oh-my-zsh
 zplug "plugins/sudo",  from:oh-my-zsh
@@ -79,10 +80,7 @@ alias c='z'
 alias opn='a -e xdg-open'
 alias edt='f -e "$EDITOR"'
 
-
 alias scan-code="cloc --exclude-dir=$(tr '\n' ',' < ~/.clocignore) ./"
 
-function users
-{
-  cut -d: -f1 /etc/passwd
-}
+#FUNCTIONS
+source ~/.zshfn

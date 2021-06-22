@@ -37,6 +37,7 @@ chmod +x ~/bin/exec/*
 
 cp ~/bin/.zshrc ~/ && echo "Copied .zshrc to ~/"
 cp ~/bin/.zshenv ~/ && echo "Copied .zshenv to ~/"
+cp ~/bin/.zshfn ~/ && echo "Copied .zshfn to ~/"
 cp ~/bin/.npmrc ~/ && echo "Copied .npmrc to ~/"
 cp ~/bin/.gitconfig ~/ && echo "Copied .gitconfig to ~/"
 
