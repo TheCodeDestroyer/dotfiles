@@ -72,7 +72,7 @@ fi
 
 #ALIASES
 alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
-alias ghee-work="ghee set --email nace.logar@3fs.si"
+alias ghee-work="ghee set --email nace.logar@iryo.io"
 
 alias ls='lsd'
 
