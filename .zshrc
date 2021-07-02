@@ -66,8 +66,16 @@ fi
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
 if zplug check zsh-users/zsh-history-substring-search; then
-    bindkey "$terminfo[kcuu1]" history-substring-search-up
-    bindkey "$terminfo[kcud1]" history-substring-search-down
+  case `uname` in
+    Darwin)
+      bindkey '^[[A' history-substring-search-up
+      bindkey '^[[B' history-substring-search-down
+    ;;
+    Linux)
+      bindkey "$terminfo[kcuu1]" history-substring-search-up
+      bindkey "$terminfo[kcud1]" history-substring-search-down
+    ;;
+  esac
 fi
 
 #ALIASES
