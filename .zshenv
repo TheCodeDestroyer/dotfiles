@@ -23,6 +23,7 @@ export ZSH_PLUGINS_ALIAS_TIPS_TEXT="You should use: "
 # android
 export ANDROID_HOME=~/Work/software/android/sdk
 export PATH=${PATH}:~/Work/software/android/sdk/tools
+export PATH=${PATH}:~/Work/software/android/sdk/tools/bin
 export PATH=${PATH}:~/Work/software/android/sdk/platform-tools
 # node
 export NVM_LAZY_LOAD=true
