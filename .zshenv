@@ -13,6 +13,7 @@ setopt HIST_BEEP
 # common
 export PATH=~/bin/exec:$PATH
 export EDITOR=nano
+export LANG="en_US.UTF-8"
 # zsh
 export HISTFILE="${HOME}/.zsh_history"
 export HISTSIZE=10000
