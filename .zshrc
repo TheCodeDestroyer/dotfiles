@@ -15,7 +15,7 @@ zplug "clvv/fasd", as:command
 zplug 'zplug/zplug', hook-build:'zplug --self-manage'
 
 zplug "zsh-users/zsh-completions"
-zplug "zdharma/fast-syntax-highlighting"
+zplug "zdharma-continuum/fast-syntax-highlighting"
 zplug "zsh-users/zsh-history-substring-search"
 zplug "djui/alias-tips"
 zplug "Peltoche/lsd"

@@ -31,5 +31,5 @@ fabric.properties
 libs/
 .DS_Store
 exec/external
-
+exec/studio
 node_modules
