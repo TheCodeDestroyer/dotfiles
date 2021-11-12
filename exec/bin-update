@@ -39,6 +39,7 @@ cp ~/bin/.zshrc ~/ && echo "Copied .zshrc to ~/"
 cp ~/bin/.zshenv ~/ && echo "Copied .zshenv to ~/"
 cp ~/bin/.zshfn ~/ && echo "Copied .zshfn to ~/"
 cp ~/bin/.npmrc ~/ && echo "Copied .npmrc to ~/"
+cp ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Copied sheldon.toml to ~/.config/sheldon/plugins.toml"
 cp ~/bin/.gitconfig ~/ && echo "Copied .gitconfig to ~/"
 
 OS_NAME=$(uname -s)

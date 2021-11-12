@@ -18,6 +18,7 @@ export LANG="en_US.UTF-8"
 export HISTFILE="${HOME}/.zsh_history"
 export HISTSIZE=10000
 export SAVEHIST=10000
+export ZSH_CACHE_DIR="${HOME}/.zsh_cache"
 ### ZHS plugin stuff
 export ZSH_PLUGINS_ALIAS_TIPS_EXCLUDES="g st y"
 export ZSH_PLUGINS_ALIAS_TIPS_TEXT="You should use: "
