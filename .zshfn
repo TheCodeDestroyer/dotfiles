@@ -4,9 +4,9 @@ function update-system {
   local OS_TYPE=$(uname -s)
 
   if [[ "${OS_TYPE}" == "Darwin" ]]; then
-      brew update && brew upgrade && bin-update && zplug update && nvm-update && node-update
+      brew update && brew upgrade && bin-update; nvm-update; node-update
   elif [[ "${OS_TYPE}" == "Linux" ]]; then
-      adg -y && adu -y && bin-update; zplug update; nvm-update; node-update
+      adg -y && adu -y && bin-update; nvm-update; node-update
   else
       echo "Unsuported system!"
   fi
