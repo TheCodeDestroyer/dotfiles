@@ -66,4 +66,16 @@ use = [
 	'{node,nvm,yarn}/*.plugin.zsh',
 	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
 	'{debian,osx}/*.plugin.zsh',
+	'{flutter}/*.plugin.zsh',
 ]
+
+[plugins.ohmyzsh-completions]
+github = 'ohmyzsh/ohmyzsh'
+dir = 'plugins'
+apply = ["fpath"]
+use = [
+	'_flutter'
+]
+
+[plugins.compinit]
+inline = 'autoload -Uz compinit && compinit'
