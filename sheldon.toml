@@ -17,11 +17,6 @@ defer = { value = 'zsh-defer source "{{ file }}"', each = true }
 
 [plugins]
 
-# For example:
-#
-# [plugins.base16]
-# github = "chriskempson/base16-shell"
-
 [plugins.zsh-defer]
 github = "romkatv/zsh-defer"
 
@@ -65,8 +60,9 @@ use = [
 	'{git,gitfast,git-extras,github}/*.plugin.zsh',
 	'{node,nvm,yarn}/*.plugin.zsh',
 	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
-	'{debian,osx}/*.plugin.zsh',
+	'{debian,macos}/*.plugin.zsh',
 	'{flutter}/*.plugin.zsh',
+	'{1password}/*.plugin.zsh'
 ]
 
 [plugins.ohmyzsh-completions]
@@ -78,4 +74,4 @@ use = [
 ]
 
 [plugins.compinit]
-inline = 'autoload -Uz compinit && compinit'
+inline = 'autoload -Uz compinit && zsh-defer compinit'

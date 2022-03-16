@@ -32,4 +32,5 @@ libs/
 .DS_Store
 exec/external
 exec/studio
+exec/goland
 node_modules
