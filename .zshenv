@@ -32,8 +32,10 @@ export NVM_LAZY_LOAD=true
 export PATH=~/.yarn/bin:$PATH
 # python
 export PATH=~/.local/bin:$PATH
-### Ansible
+# Ansible
 export ANSIBLE_NOCOWS=1
-### Go
+# Go
 export PATH=~/go/bin:$PATH
 
+# Secrets
+export NPM_AUTH_TOKEN="op://private/npm/auth/token"
