@@ -23,10 +23,12 @@ export ZSH_CACHE_DIR="${HOME}/.zsh_cache"
 export ZSH_PLUGINS_ALIAS_TIPS_EXCLUDES="g st y"
 export ZSH_PLUGINS_ALIAS_TIPS_TEXT="You should use: "
 # android
-export ANDROID_HOME=~/Work/software/android/sdk
-export PATH=${PATH}:~/Work/software/android/sdk/tools
-export PATH=${PATH}:~/Work/software/android/sdk/tools/bin
-export PATH=${PATH}:~/Work/software/android/sdk/platform-tools
+export ANDROID_SDK_ROOT=~/Work/software/android/sdk
+export ANDROID_HOME=$ANDROID_SDK_ROOT
+export PATH=$PATH:$ANDROID_SDK_ROOT/emulator
+export PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools
+export PATH=$PATH:$ANDROID_SDK_ROOT/tools
+export PATH=$PATH:$ANDROID_SDK_ROOT/tools/bin
 # node
 export NVM_LAZY_LOAD=true
 export PATH=~/.yarn/bin:$PATH
