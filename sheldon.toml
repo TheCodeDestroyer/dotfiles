@@ -65,13 +65,5 @@ use = [
 	'{1password}/*.plugin.zsh'
 ]
 
-[plugins.ohmyzsh-completions]
-github = 'ohmyzsh/ohmyzsh'
-dir = 'plugins'
-apply = ["fpath"]
-use = [
-	'_flutter'
-]
-
 [plugins.compinit]
 inline = 'autoload -Uz compinit && zsh-defer compinit'
