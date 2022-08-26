@@ -6,6 +6,8 @@ function update-system {
   if [[ "${OS_TYPE}" == "Darwin" ]]; then
       brew update && brew upgrade;
 
+      sheldon lock --update;
+
       bin-update; nvm-update; node-update
   elif [[ "${OS_TYPE}" == "Linux" ]]; then
       adg -y && adu -y;
