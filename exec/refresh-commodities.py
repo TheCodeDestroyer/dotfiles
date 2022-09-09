@@ -28,6 +28,7 @@ def mapCoinGeckoResultToComodity(result):
 		'symbol': result.get('symbol', '/').upper(),
 		'image_url': result.get('image.large'),
 		'price': result.get('market_data.current_price.usd'),
+		'all_time_high': result.get('market_data.ath.usd'),
 	}
 
 
@@ -83,6 +84,10 @@ def getNotionData():
 
 
 def updateNotionData(comodity):
+	del comodity['last_edited_by']
+	del comodity['last_edited_time']
+	del comodity['properties.Updated At']
+
 	comodityId = comodity.get('id')
 	url = f'https://api.notion.com/v1/pages/{comodityId}'
 	headers={
@@ -124,10 +129,10 @@ def updateCryptoComodity(comodity, crypto_network_info):
 		coin_symbol = coin.get('symbol')
 		nethash = getNetworkHash(crypto_network_info, coin_symbol)
 
-		del comodity['properties.Updated At']
 		comodity['properties.Name.title.0.text.content'] = coin.get('name')
 		comodity['properties.Symbol.rich_text.0.text.content'] = coin_symbol
 		comodity['properties.Price.number'] = coin.get('price')
+		comodity['properties.All Time High.number'] = coin.get('all_time_high')
 		comodity['properties.NetHash.number'] = nethash
 		comodity['icon'] = {
 			'type': 'external',
@@ -144,9 +149,9 @@ def updateStockComodity(comodity, symbol):
 	stock = dotty(stock_raw.info)
 
 	if stock.get('regularMarketPrice'):
-		del comodity['properties.Updated At']
 		comodity['properties.Name.title.0.text.content'] = stock.get('shortName')
 		comodity['properties.Price.number'] = stock.get('regularMarketPrice')
+		comodity['properties.All Time High.number'] = stock.get('fiftyTwoWeekHigh')
 		comodity['icon'] = {
 			'type': 'external',
 			'external': {
@@ -172,5 +177,5 @@ def refreshComodities():
 		elif comodityType == 'Stock':
 			print(symbol)
 			updateStockComodity(comodity, symbol)
-			
+
 refreshComodities()
