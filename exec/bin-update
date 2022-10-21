@@ -40,14 +40,13 @@ cp ~/bin/.zshenv ~/ && echo "Copied .zshenv to ~/"
 cp ~/bin/.zshfn ~/ && echo "Copied .zshfn to ~/"
 cp ~/bin/.npmrc ~/ && echo "Copied .npmrc to ~/"
 cp ~/bin/.gitconfig ~/ && echo "Copied .gitconfig to ~/"
+cp ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Copied sheldon.toml to ~/.config/sheldon/plugins.toml"
 
 OS_NAME=$(uname -s)
 
 if [[ $OS_NAME = "Darwin" ]]
 then
     sed -i "" "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated"
-    cp ~/bin/sheldon.toml ~/.sheldon/plugins.toml && echo "Copied sheldon.toml to ~/.sheldon/plugins.toml"
 else
     sed -i "s/{{GPG_EXECUTABLE}}/"$GPG_EXECUTABLE_NAME"/g" ~/.gitconfig && echo "GPG executable updated: $GPG_EXECUTABLE_NAME"
-    cp ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Copied sheldon.toml to ~/.config/sheldon/plugins.toml"
 fi
