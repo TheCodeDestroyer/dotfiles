@@ -60,8 +60,10 @@ use = [
 	'{git,gitfast,git-extras,github}/*.plugin.zsh',
 	'{node,nvm,yarn}/*.plugin.zsh',
 	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
+	'{docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
 	'{debian,macos}/*.plugin.zsh',
 	'{flutter}/*.plugin.zsh',
+	'{aws,gcloud}/*.plugin.zsh',
 	'{1password}/*.plugin.zsh'
 ]
 
