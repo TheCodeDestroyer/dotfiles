@@ -60,12 +60,26 @@ use = [
 	'{git,gitfast,git-extras,github}/*.plugin.zsh',
 	'{node,nvm,yarn}/*.plugin.zsh',
 	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
-	'{docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
-	'{debian,macos}/*.plugin.zsh',
 	'{flutter}/*.plugin.zsh',
 	'{aws,gcloud}/*.plugin.zsh',
 	'{1password}/*.plugin.zsh'
 ]
+
+[plugins.ohmyzsh-linux]
+github = 'ohmyzsh/ohmyzsh'
+dir = 'plugins'
+use = [
+	'{debian,minikube}/*.plugin.zsh',
+]
+profiles = ['linux']
+
+[plugins.ohmyzsh-macos]
+github = 'ohmyzsh/ohmyzsh'
+dir = 'plugins'
+use = [
+	'{macos}/*.plugin.zsh',
+]
+profiles = ['macos']
 
 [plugins.compinit]
 inline = 'autoload -Uz compinit && zsh-defer compinit'
