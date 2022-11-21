@@ -43,43 +43,7 @@ function auth-docker
 
 #DOCKER
 
-
-function docker-remove-all-containers
+function docker-connect-minikube
 {
-  docker rm -f $(docker ps -a -q)
-}
-
-function docker-remove-all-images
-{
-  docker rmi -f $(docker images -q)
-}
-
-function docker-remove-all-services
-{
-  docker service rm $(docker service ls -q)
-}
-
-function docker-remove-dangling-volumes
-{
-  docker volume rm $(docker volume ls -q -f dangling=true)
-}
-
-function docker-remove-all-secrets
-{
-  docker secret rm $(docker secret ls -q)
-}
-
-function docker-remove-all-configs
-{
-  docker config rm $(docker config ls -q)
-}
-
-function docker-clean-everything
-{
-  docker-remove-all-services
-  docker-remove-all-containers
-  docker-remove-all-images
-  docker-remove-dangling-volumes
-  docker-remove-all-secrets
-  docker-remove-all-configs
+  eval $(minikube -p minikube docker-env)
 }
