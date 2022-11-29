@@ -12,7 +12,7 @@ eval "$(fasd --init auto)"
 
 #ALIASES
 alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
-alias ghee-work="ghee set --email nace.logar@iryo.io"
+alias ghee-work="ghee set --email nace.logar@3fs.si"
 
 alias ls='lsd'
 

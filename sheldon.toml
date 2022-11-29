@@ -58,7 +58,7 @@ use = [
 	'{history,sudo,colored-man-pages,command-not-found}/*.plugin.zsh',
 	'{encode64,extract,fasd,httpie}/*.plugin.zsh',
 	'{git,gitfast,git-extras,github}/*.plugin.zsh',
-	'{node,nvm,yarn}/*.plugin.zsh',
+	'{node,nvm,yarn,npm,brew}/*.plugin.zsh',
 	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
 	'{flutter}/*.plugin.zsh',
 	'{aws,gcloud}/*.plugin.zsh',
