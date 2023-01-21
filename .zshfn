@@ -12,7 +12,7 @@ function update-system {
   elif [[ "${OS_TYPE}" == "Linux" ]]; then
       adg -y && adu -y;
       
-      cargo install sheldon && sheldon lock --update;
+      cargo install-update -a && sheldon lock --update;
 
       sheldon completions --shell zsh > ${ZSH_CACHE_DIR}/completions/_sheldon
 
