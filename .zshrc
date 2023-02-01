@@ -10,18 +10,6 @@ fi
 eval "$(sheldon source)"
 eval "$(fasd --init auto)"
 
-#ALIASES
-alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
-alias ghee-work="ghee set --email nace.logar@3fs.si"
-
-alias ls='lsd'
-
-alias c='z'
-alias opn='a -e xdg-open'
-alias edt='f -e "$EDITOR"'
-
-alias scan-code="cloc --exclude-dir=$(tr '\n' ',' < ~/.clocignore) ./"
-
 #FUNCTIONS
 source ~/.zshfn
 
