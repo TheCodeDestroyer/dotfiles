@@ -10,27 +10,15 @@
 [pager]
 	branch 	= false
 [alias]
-	dic   	= diff --cached
 	patch   = "!f() { git dic > ${1-diff}.patch; }; f"
-	chk   	= checkout
 	chkr	= "!f() { git checkout -b $1 ${2:-origin}/$1; }; f"
-	ci   	= commit
-	cm   	= commit --message
-	cma   	= commit --amend
 	ff		= "!f() { git merge --ff-only origin/${1:-NO_SOURCE_BRANCH}; }; f"
 	cmres	= reset HEAD~
-	st   	= status
 	stco 	= "!f() { git --no-pager diff --oneline --shortstat ${1:-NO_SOURCE_BRANCH}; }; f"
 	discard = "!f() { git add . && git stash && git stash drop stash@{0}; }; f"
-	br   	= branch
-	brl 	= branch --all
-	brd   	= branch -D
 	brdres 	= "!f() { git reset --hard origin/${1:-NO_SOURCE_BRANCH}; }; f"
 	sta 	= stash
-	stap 	= stash pop
-	stac 	= stash clear
 	stad 	= stash drop stash@{0}
-	stal 	= stash list
 	lg   	= log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %C(green)(%cr)%C(reset) - author: %C(bold blue)%an <%ae>%C(reset), commiter: %C(bold blue)%cn <%ce>%C(reset) - %C(cyan)%GS%C(reset) %C(cyan)(%G?)%C(reset)'
 	lgs 	= log --graph --all  --decorate --oneline
 	today	= !git log --reflog --since yesterday --author $(git config user.email) --pretty='format:%C(green)%cd%C(reset) %C(red)%h%C(reset) %s'
@@ -39,11 +27,6 @@
 	latest 	= for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(color:green)%(committerdate:iso8601)%(color:reset) %(color:red)%(refname:short)%(color:reset) %(color:cyan)%(authorname)%(color:reset)'
 	sig		= verify-commit HEAD
 	stsig	= !echo G - valid, B - invalid, U - Unknown, X - good and expired, Y - good and expired key, R - good and revoked key, E - cannot be checked, N - no signature
-	rb   	= rebase
-	rbc  	= rebase --continue
-	rba  	= rebase --abort
-	rbs  	= rebase --skip
-	rbi  	= rebase --interactive
 	fap  	= fetch --all --prune --progress --tags
 	alias 	= !git config --get-regexp ^alias\\. | sed -e s/^alias\\.// -e s/\\ /\\ =\\ /
 [gpg]
