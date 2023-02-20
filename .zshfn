@@ -41,7 +41,7 @@ function auth-docker
 }
 
 
-#DOCKER
+# DOCKER
 
 function docker-connect-minikube
 {

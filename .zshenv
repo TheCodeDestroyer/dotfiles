@@ -94,3 +94,7 @@ alias pnui="pnpm upgrade --interactive"
 alias pnuil="pnpm update --interactive --latest"
 alias pnv="pnpm version"
 alias pny="pnpm why"
+
+# GIT
+alias gcmi="git commit"
+alias gcstg="git checkout staging"
