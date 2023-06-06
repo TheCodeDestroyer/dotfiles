@@ -10,6 +10,9 @@ fi
 eval "$(sheldon source)"
 eval "$(fasd --init auto)"
 
+#PROFILES
+source ~/.profile
+
 #FUNCTIONS
 source ~/.zshfn
 source ~/.config/op/plugins.sh
