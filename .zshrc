@@ -33,3 +33,7 @@ case `uname` in
     bindkey "$terminfo[kcud1]" history-substring-search-down
   ;;
 esac
+
+#COMPLETION OPTION STACKING
+zstyle ':completion:*:*:docker:*' option-stacking yes
+zstyle ':completion:*:*:docker-*:*' option-stacking yes
