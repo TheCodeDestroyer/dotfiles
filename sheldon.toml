@@ -61,8 +61,7 @@ use = [
 	'{node,nvm,yarn,npm,brew}/*.plugin.zsh',
 	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
 	'{flutter}/*.plugin.zsh',
-	'{aws,gcloud}/*.plugin.zsh',
-	'{1password}/*.plugin.zsh'
+	'{aws,gcloud}/*.plugin.zsh'
 ]
 
 [plugins.ohmyzsh-linux]
