@@ -51,6 +51,17 @@ apply = ["defer"]
 github = 'clvv/fasd'
 use = ['fasd']
 
+[plugins.orbstack]
+github = 'orbstack/orbstack'
+use = ['orb.plugin.zsh']
+
+[plugins.ohmyzsh-lib]
+github = 'ohmyzsh/ohmyzsh'
+dir = 'lib'
+use = [
+	'{git}.zsh'
+]
+
 [plugins.ohmyzsh]
 github = 'ohmyzsh/ohmyzsh'
 dir = 'plugins'
@@ -59,7 +70,7 @@ use = [
 	'{encode64,extract,fasd,httpie}/*.plugin.zsh',
 	'{git,gitfast,git-extras,gh}/*.plugin.zsh',
 	'{node,nvm,yarn,npm,brew}/*.plugin.zsh',
-	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
+	'{docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
 	'{flutter}/*.plugin.zsh',
 	'{aws,gcloud}/*.plugin.zsh'
 ]
