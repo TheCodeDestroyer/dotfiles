@@ -6,7 +6,7 @@
 [commit]
 	gpgsign = true
 [push]
-	default = nothing
+	default = current
 [pager]
 	branch 	= false
 [alias]
