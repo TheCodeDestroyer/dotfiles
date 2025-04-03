@@ -43,10 +43,6 @@ apply = ["defer"]
 github = 'manlao/zsh-auto-nvm'
 apply = ["defer"]
 
-[plugins.zsh-pyenv]
-github = 'mattberther/zsh-pyenv'
-apply = ["defer"]
-
 [plugins.fasd]
 github = 'clvv/fasd'
 use = ['fasd']
