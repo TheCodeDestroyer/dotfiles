@@ -7,6 +7,8 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
+mkdir -p ${ZSH_CACHE_DIR}/completions
+
 eval "$(sheldon source)"
 eval "$(fasd --init auto)"
 
