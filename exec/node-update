@@ -1,5 +1,0 @@
-#!/usr/bin/env zsh
-
-# node-update - A script to handle NodeJS Update process
-
-python ~/bin/exec/check-nvm-lts.py | zsh

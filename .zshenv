@@ -32,12 +32,9 @@ export PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools
 export PATH=$PATH:$ANDROID_SDK_ROOT/tools
 export PATH=$PATH:$ANDROID_SDK_ROOT/tools/bin
 ## Node
-export NVM_LAZY_LOAD=true
 export PATH=~/.yarn/bin:$PATH
 export PNPM_HOME=~/.local/share/pnpm
 export PATH=$PNPM_HOME:$PATH
-## Python
-export PATH=~/.local/bin:$PATH
 ## Ansible
 export ANSIBLE_NOCOWS=1
 ## Go

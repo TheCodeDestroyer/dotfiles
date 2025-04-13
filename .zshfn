@@ -7,19 +7,17 @@ function update-system {
       brew update && brew upgrade;
 
       sheldon lock --update;
-
-      bin-update; nvm-update; node-update
   elif [[ "${OS_TYPE}" == "Linux" ]]; then
       adg -y && adu -y;
       
       cargo install-update -a && sheldon lock --update;
 
-      sheldon completions --shell zsh > ${ZSH_CACHE_DIR}/completions/_sheldon
-
-      bin-update; nvm-update; node-update
+      sheldon completions --shell zsh > ${ZSH_CACHE_DIR}/completions/_sheldon;
   else
       echo "Unsuported system!"
   fi
+
+  bin-update; mise upgrade -y; mise prune -y; mise install;
 }
 
 

@@ -35,14 +35,6 @@ github = 'zsh-users/zsh-history-substring-search'
 [plugins.alias-tips]
 github = 'djui/alias-tips'
 
-[plugins.zsh-direnv]
-github = 'ptavares/zsh-direnv'
-apply = ["defer"]
-
-[plugins.zsh-auto-nvm]
-github = 'manlao/zsh-auto-nvm'
-apply = ["defer"]
-
 [plugins.fasd]
 github = 'clvv/fasd'
 use = ['fasd']
@@ -63,11 +55,10 @@ github = 'ohmyzsh/ohmyzsh'
 dir = 'plugins'
 use = [
 	'{history,sudo,colored-man-pages,command-not-found}/*.plugin.zsh',
-	'{encode64,extract,fasd,httpie}/*.plugin.zsh',
+	'{encode64,extract,fasd,mise}/*.plugin.zsh',
 	'{git,gitfast,git-extras,gh}/*.plugin.zsh',
-	'{node,nvm,yarn,npm,brew}/*.plugin.zsh',
-	'{docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
-	'{flutter}/*.plugin.zsh',
+	'{node,mise,npm,brew}/*.plugin.zsh',
+	'{docker,docker-compose,ansible,kubectl,helm}/*.plugin.zsh',
 	'{aws,gcloud}/*.plugin.zsh'
 ]
 
