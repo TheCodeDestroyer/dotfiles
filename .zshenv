@@ -24,21 +24,6 @@ export ZSH_CACHE_DIR="${HOME}/.zsh_cache"
 ### ZHS plugin stuff
 export ZSH_PLUGINS_ALIAS_TIPS_EXCLUDES="g st y"
 export ZSH_PLUGINS_ALIAS_TIPS_TEXT="You should use: "
-## Android
-export ANDROID_SDK_ROOT=~/Work/software/android/sdk
-export ANDROID_HOME=$ANDROID_SDK_ROOT
-export PATH=$PATH:$ANDROID_SDK_ROOT/emulator
-export PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools
-export PATH=$PATH:$ANDROID_SDK_ROOT/tools
-export PATH=$PATH:$ANDROID_SDK_ROOT/tools/bin
-## Node
-export PATH=~/.yarn/bin:$PATH
-export PNPM_HOME=~/.local/share/pnpm
-export PATH=$PNPM_HOME:$PATH
-## Ansible
-export ANSIBLE_NOCOWS=1
-## Go
-export PATH=~/go/bin:$PATH
 
 ## Secrets
 export NPM_AUTH_TOKEN="op://private/npm/auth/token"
