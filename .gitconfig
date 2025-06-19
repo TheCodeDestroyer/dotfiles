@@ -1,6 +1,7 @@
 [core]
 	editor		= nano
 	fileMode	= false
+	ignorecase	= false
 [user]
 	name	= Nace Logar
 [commit]
