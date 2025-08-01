@@ -32,7 +32,7 @@ fi
 echo "Updating repo..."
 git pull --rebase
 
-echo "Adding exectubale privilige to scripts..."
+echo "Adding executable privilige to scripts..."
 chmod +x ~/bin/exec/*
 
 cp ~/bin/.zshrc ~/ && echo "Copied .zshrc to ~/"
