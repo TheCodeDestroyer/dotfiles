@@ -4,6 +4,8 @@
 	ignorecase	= false
 [user]
 	name	= Nace Logar
+[init]
+	defaultBranch = main
 [commit]
 	gpgsign = true
 [push]
