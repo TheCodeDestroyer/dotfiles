@@ -53,7 +53,7 @@ alias c='z'
 alias opn='a -e xdg-open'
 alias edt='f -e "$EDITOR"'
 
-alias scan-code="cloc --exclude-dir=$(tr '\n' ',' < ~/.clocignore) ./"
+alias scan-code="cloc --vcs=git"
 
 # PNPM
 alias pn="pnpm"
