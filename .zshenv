@@ -31,6 +31,8 @@ export NPM_USERNAME="op://private/npm/username"
 export NPM_EMAIL="op://private/npm/username"
 export DOCKER_USERNAME="op://private/docker/username"
 export DOCKER_AUTH_TOKEN="op://private/docker/auth/token"
+export CONVEX_AUTH_TOKEN="op://private/convex/auth/token"
+export CONVEX_WOKR_AUTH_TOKEN="op://optiweb/convex - ow/auth/token"
 
 # Sheldon
 local OS_TYPE=$(uname -s)

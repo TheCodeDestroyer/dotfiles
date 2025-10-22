@@ -23,19 +23,19 @@ function update-system {
 
 # CLI AUTH
 
-function auth-npm
-{
-  echo "//registry.npmjs.org/:_authToken=$(op run --no-masking -- printenv NPM_AUTH_TOKEN)" >> ~/.npmrc
-}
-
-function auth-yarn
-{
-  { echo $(op run --no-masking -- printenv NPM_USERNAME); echo $(op run --no-masking -- printenv NPM_EMAIL); } | yarn login
-}
-
 function auth-docker
 {
-  echo $(op run --no-masking -- printenv DOCKER_AUTH_TOKEN) | docker login --username thecodedestroyer --password-stdin
+  echo $(op read $DOCKER_AUTH_TOKEN) | docker login --username $(op read $DOCKER_USERNAME) --password-stdin
+}
+
+function auth-convex
+{
+  echo "{ \"accessToken\": \"$(op read $CONVEX_AUTH_TOKEN)\" }" > ~/.convex/config.json
+}
+
+function auth-convex-work
+{
+  echo "{ \"accessToken\": \"$(op read $CONVEX_WOKR_AUTH_TOKEN)\" }" > ~/.convex/config.json
 }
 
 
