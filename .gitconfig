@@ -20,8 +20,6 @@
 	stco 	= "!f() { git --no-pager diff --oneline --shortstat ${1:-NO_SOURCE_BRANCH}; }; f"
 	discard = "!f() { git add . && git stash && git stash drop stash@{0}; }; f"
 	brdres 	= "!f() { git reset --hard origin/${1:-NO_SOURCE_BRANCH}; }; f"
-	sta 	= stash
-	stad 	= stash drop stash@{0}
 	lg   	= log --graph --pretty='format:%C(yellow)%h%C(reset) -%C(red)%d%C(reset) %s %C(green)(%cr)%C(reset) - author: %C(bold blue)%an <%ae>%C(reset), commiter: %C(bold blue)%cn <%ce>%C(reset) - %C(cyan)%GS%C(reset) %C(cyan)(%G?)%C(reset)'
 	lgs 	= log --graph --all  --decorate --oneline
 	today	= !git log --reflog --since yesterday --author $(git config user.email) --pretty='format:%C(green)%cd%C(reset) %C(red)%h%C(reset) %s'
