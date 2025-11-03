@@ -45,3 +45,20 @@ function docker-connect-minikube
 {
   eval $(minikube -p minikube docker-env)
 }
+
+# NODE/BUN
+
+function pm
+{
+  if [[ -f bun.lockb ]] || [[ -f bun.lock ]]; then
+    command bun "$@"
+  elif [[ -f pnpm-lock.yaml ]]; then
+    command pnpm "$@"
+  elif [[ -f yarn.lock ]]; then
+    command yarn "$@"
+  elif [[ -f package-lock.json ]]; then
+    command npm "$@"
+  else
+    command bun "$@"
+  fi
+}
