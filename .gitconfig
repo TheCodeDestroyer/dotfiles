@@ -10,6 +10,7 @@
 	gpgsign = true
 [push]
 	default = current
+	autoSetupRemote = true
 [pager]
 	branch 	= false
 [alias]
