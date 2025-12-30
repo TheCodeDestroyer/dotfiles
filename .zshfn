@@ -50,15 +50,31 @@ function docker-connect-minikube
 
 function pm
 {
-  if [[ -f bun.lockb ]] || [[ -f bun.lock ]]; then
-    command bun "$@"
-  elif [[ -f pnpm-lock.yaml ]]; then
-    command pnpm "$@"
-  elif [[ -f yarn.lock ]]; then
-    command yarn "$@"
-  elif [[ -f package-lock.json ]]; then
-    command npm "$@"
-  else
-    command bun "$@"
-  fi
+  local d="$PWD"
+  
+  # Traverse up the directory tree
+  while true; do
+    if [[ -f "$d/bun.lockb" ]] || [[ -f "$d/bun.lock" ]]; then
+      command bun "$@"
+      return
+    elif [[ -f "$d/pnpm-lock.yaml" ]]; then
+      command pnpm "$@"
+      return
+    elif [[ -f "$d/yarn.lock" ]]; then
+      command yarn "$@"
+      return
+    elif [[ -f "$d/package-lock.json" ]]; then
+      command npm "$@"
+      return
+    fi
+
+    # If we reach root without finding a lockfile, break the loop
+    [[ "$d" == "/" ]] && break
+    
+    # Move to parent directory
+    d=${d:h}
+  done
+
+  # Fallback to pnpm if no lockfile is found anywhere in the tree
+  command pnpm "$@"
 }
