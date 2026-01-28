@@ -13,7 +13,8 @@ setopt HIST_BEEP
 # EXPORTS
 
 ## Common
-export PATH=~/bin/exec:$PATH
+export PATH="${HOME}/bin/exec:$PATH"
+export PATH="${HOME}/.local/bin:$PATH"
 export EDITOR=nano
 export LANG="en_US.UTF-8"
 ## ZSH
