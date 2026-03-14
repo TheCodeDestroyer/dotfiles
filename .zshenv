@@ -15,6 +15,9 @@ setopt HIST_BEEP
 ## Common
 export PATH="${HOME}/bin/exec:$PATH"
 export PATH="${HOME}/.local/bin:$PATH"
+
+## Mise (static shims PATH for non-interactive shells, hook mode via ohmyzsh plugin for interactive)
+export PATH="$HOME/.local/share/mise/shims:$PATH"
 export EDITOR=nano
 export LANG="en_US.UTF-8"
 ## ZSH
