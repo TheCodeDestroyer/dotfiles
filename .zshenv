@@ -15,6 +15,7 @@ setopt HIST_BEEP
 ## Common
 export PATH="${HOME}/bin/exec:$PATH"
 export PATH="${HOME}/.local/bin:$PATH"
+export GIDEON_HOME="${HOME}/Work/gideon"
 
 ## Mise (static shims PATH for non-interactive shells, hook mode via ohmyzsh plugin for interactive)
 export PATH="$HOME/.local/share/mise/shims:$PATH"
