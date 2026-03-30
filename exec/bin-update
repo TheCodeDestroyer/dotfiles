@@ -35,12 +35,18 @@ git pull --rebase
 echo "Adding executable privilige to scripts..."
 chmod +x ~/bin/exec/*
 
-cp ~/bin/.zshrc ~/ && echo "Copied .zshrc to ~/"
-cp ~/bin/.zshenv ~/ && echo "Copied .zshenv to ~/"
-cp ~/bin/.zshfn ~/ && echo "Copied .zshfn to ~/"
-cp ~/bin/.npmrc ~/ && echo "Copied .npmrc to ~/"
-cp ~/bin/.gitconfig ~/ && echo "Copied .gitconfig to ~/"
-cp ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Copied sheldon.toml to ~/.config/sheldon/plugins.toml"
+echo "Linking config files..."
+ln -sf ~/bin/.zshrc ~/.zshrc && echo "Linked .zshrc"
+ln -sf ~/bin/.zshenv ~/.zshenv && echo "Linked .zshenv"
+ln -sf ~/bin/.zshfn ~/.zshfn && echo "Linked .zshfn"
+ln -sf ~/bin/.npmrc ~/.npmrc && echo "Linked .npmrc"
+mkdir -p ~/.config/sheldon
+ln -sf ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Linked sheldon.toml"
+mkdir -p ~/.claude
+ln -sf ~/bin/exec/claude-statusline ~/.claude/statusline.sh && echo "Linked claude-statusline"
+
+echo "Generating .gitconfig from template..."
+cp ~/bin/.gitconfig.template ~/.gitconfig
 
 OS_NAME=$(uname -s)
 

@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# ~/.claude/statusline.sh
+# Fast local Claude Code status line with color-coded context, git info, and cost.
+
+RESET="\033[0m"
+BOLD="\033[1m"
+DIM="\033[2m"
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+BLUE="\033[34m"
+CYAN="\033[36m"
+BRIGHT_RED="\033[91m"
+BRIGHT_GREEN="\033[92m"
+BRIGHT_YELLOW="\033[93m"
+
+# Single jq call to extract all fields (newline-delimited to handle spaces in model name)
+{
+  read -r model
+  read -r used_pct
+  read -r total_input
+  read -r ctx_size
+  read -r duration_ms
+  read -r cost_usd
+  read -r lines_added
+  read -r lines_removed
+} < <(
+  jq -r '
+    (.model.display_name // "Claude"),
+    (.context_window.used_percentage // ""),
+    (((.context_window.used_percentage // 0) / 100 * (.context_window.context_window_size // 0)) | floor),
+    ((.context_window.context_window_size // 0) | floor),
+    ((.cost.total_duration_ms // 0) | floor),
+    (.cost.total_cost_usd // ""),
+    ((.cost.total_lines_added // 0) | floor),
+    ((.cost.total_lines_removed // 0) | floor)
+  '
+)
+
+# Format token counts using bash arithmetic (avoids bc forks)
+format_tokens() {
+  local val="$1" round="$2"
+  if [ -z "$val" ] || [ "$val" = "0" ]; then
+    echo "0"
+    return
+  fi
+  if [ "$val" -ge 1000000 ]; then
+    local whole=$(( val / 1000000 ))
+    local frac=$(( (val % 1000000) / 100000 ))
+    if [ "$round" = "1" ]; then
+      printf "%dM" "$whole"
+    else
+      printf "%d.%dM" "$whole" "$frac"
+    fi
+  else
+    local whole=$(( val / 1000 ))
+    local frac=$(( (val % 1000) / 100 ))
+    if [ "$round" = "1" ]; then
+      printf "%dk" "$whole"
+    else
+      printf "%d.%dk" "$whole" "$frac"
+    fi
+  fi
+}
+
+tokens_fmt=$(format_tokens "$total_input" "0")
+ctx_fmt=$(format_tokens "$ctx_size" "1")
+
+ctx_color="$BRIGHT_GREEN"
+if [ -n "$used_pct" ]; then
+  pct_int=$(printf "%.0f" "$used_pct" 2>/dev/null || echo 0)
+  if   [ "$pct_int" -ge 85 ]; then ctx_color="$BRIGHT_RED"
+  elif [ "$pct_int" -ge 70 ]; then ctx_color="$BRIGHT_YELLOW"
+  elif [ "$pct_int" -ge 50 ]; then ctx_color="$YELLOW"
+  elif [ "$pct_int" -ge 25 ]; then ctx_color="$GREEN"
+  fi
+  ctx_pct_str=$(printf "%g%%" "$used_pct")
+else
+  ctx_pct_str="0%"
+fi
+
+duration_sec=$(( duration_ms / 1000 ))
+dur_h=$(( duration_sec / 3600 ))
+dur_m=$(( (duration_sec % 3600) / 60 ))
+if [ "$dur_h" -gt 0 ]; then
+  dur_str="${dur_h}h ${dur_m}m"
+else
+  dur_str="${dur_m}m"
+fi
+
+if [ -n "$cost_usd" ] && [ "$cost_usd" != "0" ]; then
+  cost_str=$(printf "\$%.4f" "$cost_usd")
+else
+  cost_str=""
+fi
+
+git_branch=""
+git_diff=""
+is_worktree=false
+git_dir=$(git rev-parse --git-dir 2>/dev/null)
+if [ -n "$git_dir" ]; then
+  git_branch=$(git branch --show-current 2>/dev/null)
+
+  # Worktrees have a commondir file pointing to the main repo
+  if [ -f "$git_dir/commondir" ]; then
+    is_worktree=true
+  fi
+
+  if [ "$lines_added" != "0" ] || [ "$lines_removed" != "0" ]; then
+    git_diff="${BRIGHT_GREEN}+${lines_added}${RESET},${RED}-${lines_removed}${RESET}"
+  fi
+fi
+
+SEP="${DIM} | ${RESET}"
+
+# ── Line 1: Model | Context | Duration (Cost) ──
+line1="${BOLD}${CYAN}${model}${RESET}"
+line1+="${SEP}${ctx_color}${tokens_fmt}/${ctx_fmt} (${ctx_pct_str})${RESET}"
+
+if [ "$duration_sec" -gt 0 ] || [ -n "$cost_str" ]; then
+  line1+="${SEP}${DIM}"
+  if [ "$duration_sec" -gt 0 ]; then
+    line1+="${dur_str}"
+  fi
+  if [ -n "$cost_str" ]; then
+    line1+=" (${cost_str})"
+  fi
+  line1+="${RESET}"
+fi
+
+printf "%b\n" "$line1"
+
+# ── Line 2: Git branch + worktree + diff stats ──
+if [ -n "$git_branch" ]; then
+  line2="${BLUE} ${git_branch}${RESET}"
+  if [ "$is_worktree" = true ]; then
+    line2+=" ${BRIGHT_YELLOW}[worktree]${RESET}"
+  fi
+  if [ -n "$git_diff" ]; then
+    line2+="  (${git_diff})"
+  fi
+  printf "%b\n" "$line2"
+fi
