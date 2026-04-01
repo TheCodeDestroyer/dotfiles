@@ -13,6 +13,8 @@ CYAN="\033[36m"
 BRIGHT_RED="\033[91m"
 BRIGHT_GREEN="\033[92m"
 BRIGHT_YELLOW="\033[93m"
+MAGENTA="\033[35m"
+BRIGHT_MAGENTA="\033[95m"
 
 # Single jq call to extract all fields (newline-delimited to handle spaces in model name)
 {
@@ -24,16 +26,20 @@ BRIGHT_YELLOW="\033[93m"
   read -r cost_usd
   read -r lines_added
   read -r lines_removed
+  read -r rate_5h_pct
+  read -r rate_5h_resets
 } < <(
   jq -r '
-    (.model.display_name // "Claude"),
+    ((.model.display_name // "Claude") | sub(" \\(.*$"; "")),
     (.context_window.used_percentage // ""),
     (((.context_window.used_percentage // 0) / 100 * (.context_window.context_window_size // 0)) | floor),
     ((.context_window.context_window_size // 0) | floor),
     ((.cost.total_duration_ms // 0) | floor),
     (.cost.total_cost_usd // ""),
     ((.cost.total_lines_added // 0) | floor),
-    ((.cost.total_lines_removed // 0) | floor)
+    ((.cost.total_lines_removed // 0) | floor),
+    (.rate_limits.five_hour.used_percentage // ""),
+    (.rate_limits.five_hour.resets_at // "")
   '
 )
 
@@ -89,33 +95,83 @@ else
 fi
 
 if [ -n "$cost_usd" ] && [ "$cost_usd" != "0" ]; then
-  cost_str=$(printf "\$%.4f" "$cost_usd")
+  cost_str=$(printf "\$%.2f" "$cost_usd")
 else
   cost_str=""
 fi
 
 git_branch=""
 git_diff=""
+git_status_str=""
 is_worktree=false
-git_dir=$(git rev-parse --git-dir 2>/dev/null)
+git_dir=$(git -c gc.auto=0 rev-parse --git-dir 2>/dev/null)
 if [ -n "$git_dir" ]; then
-  git_branch=$(git branch --show-current 2>/dev/null)
+  git_branch=$(git -c gc.auto=0 branch --show-current 2>/dev/null)
 
   # Worktrees have a commondir file pointing to the main repo
   if [ -f "$git_dir/commondir" ]; then
     is_worktree=true
   fi
 
-  if [ "$lines_added" != "0" ] || [ "$lines_removed" != "0" ]; then
-    git_diff="${BRIGHT_GREEN}+${lines_added}${RESET},${RED}-${lines_removed}${RESET}"
+  # Live diff stats from working tree (staged + unstaged)
+  diff_stat=$(git -c gc.auto=0 diff --numstat HEAD 2>/dev/null)
+  if [ -n "$diff_stat" ]; then
+    live_added=0
+    live_removed=0
+    while IFS=$'\t' read -r a r _; do
+      [[ "$a" =~ ^[0-9]+$ ]] && live_added=$(( live_added + a ))
+      [[ "$r" =~ ^[0-9]+$ ]] && live_removed=$(( live_removed + r ))
+    done <<< "$diff_stat"
+    if [ "$live_added" != "0" ] || [ "$live_removed" != "0" ]; then
+      git_diff="${BRIGHT_GREEN}+${live_added}${RESET},${RED}-${live_removed}${RESET}"
+    fi
+  fi
+
+  # Untracked / new files indicator
+  untracked=$(git -c gc.auto=0 ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+  staged_new=$(git -c gc.auto=0 diff --cached --name-only --diff-filter=A 2>/dev/null | wc -l | tr -d ' ')
+  new_files=$(( untracked + staged_new ))
+  if [ "$new_files" -gt 0 ]; then
+    git_status_str="${CYAN}?${new_files}${RESET}"
   fi
 fi
 
 SEP="${DIM} | ${RESET}"
 
-# ── Line 1: Model | Context | Duration (Cost) ──
+# ── 5h rate limit: compute before line 1 ──
+rate_5h_str=""
+if [ -n "$rate_5h_pct" ]; then
+  rate_int=$(printf "%.0f" "$rate_5h_pct" 2>/dev/null || echo 0)
+  if   [ "$rate_int" -ge 90 ]; then rate_color="$BRIGHT_RED"
+  elif [ "$rate_int" -ge 75 ]; then rate_color="$RED"
+  elif [ "$rate_int" -ge 50 ]; then rate_color="$BRIGHT_MAGENTA"
+  else rate_color="$MAGENTA"
+  fi
+  rate_pct_str=$(printf "%g%%" "$rate_5h_pct")
+  rate_5h_str="${rate_color}5h: ${rate_pct_str}"
+  if [ -n "$rate_5h_resets" ]; then
+    now=$(date +%s)
+    remaining=$(( rate_5h_resets - now ))
+    if [ "$remaining" -lt 0 ]; then remaining=0; fi
+    rem_h=$(( remaining / 3600 ))
+    rem_m=$(( (remaining % 3600 + 30) / 60 ))
+    if [ "$rem_m" -ge 60 ]; then
+      rem_h=$(( rem_h + 1 ))
+      rem_m=0
+    fi
+    countdown=$(printf "%d:%02d" "$rem_h" "$rem_m")
+    rate_5h_str+=" (${countdown})"
+  fi
+  rate_5h_str+="${RESET}"
+fi
+
+# ── Line 1: Model | Context | 5h Rate | Duration (Cost) ──
 line1="${BOLD}${CYAN}${model}${RESET}"
 line1+="${SEP}${ctx_color}${tokens_fmt}/${ctx_fmt} (${ctx_pct_str})${RESET}"
+
+if [ -n "$rate_5h_str" ]; then
+  line1+="${SEP}${rate_5h_str}"
+fi
 
 if [ "$duration_sec" -gt 0 ] || [ -n "$cost_str" ]; then
   line1+="${SEP}${DIM}"
@@ -136,8 +192,18 @@ if [ -n "$git_branch" ]; then
   if [ "$is_worktree" = true ]; then
     line2+=" ${BRIGHT_YELLOW}[worktree]${RESET}"
   fi
-  if [ -n "$git_diff" ]; then
-    line2+="  (${git_diff})"
+  if [ -n "$git_diff" ] || [ -n "$git_status_str" ]; then
+    line2+="  ("
+    if [ -n "$git_diff" ]; then
+      line2+="${git_diff}"
+    fi
+    if [ -n "$git_diff" ] && [ -n "$git_status_str" ]; then
+      line2+="${DIM} | ${RESET}"
+    fi
+    if [ -n "$git_status_str" ]; then
+      line2+="${git_status_str}"
+    fi
+    line2+=")"
   fi
   printf "%b\n" "$line2"
 fi
