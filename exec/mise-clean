@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+"""
+mise-clean - Remove non-global mise tool versions and clean up stale shims.
+
+Uninstalls tool versions that were installed by project-local configs,
+keeping only versions from the global config. Projects will auto-install
+their pinned versions on next `cd`.
+
+After uninstalling, regenerates shims and removes any that don't resolve
+to an active tool.
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+SHIMS_DIR = Path.home() / ".local/share/mise/shims"
+GLOBAL_CONFIG = Path.home() / ".config/mise/config.toml"
+
+
+def uninstall_non_global():
+    result = subprocess.run(
+        ["mise", "list", "--json"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"Error listing tools: {result.stderr}", file=sys.stderr)
+        return
+
+    tools = json.loads(result.stdout)
+    for tool, versions in tools.items():
+        for v in versions:
+            source = v.get("source", {}).get("path", "")
+            if not source:
+                # No source = manually installed / orphan, remove it
+                pass
+            elif str(Path(source).resolve()) == str(GLOBAL_CONFIG.resolve()):
+                continue
+
+            key = f"{tool}@{v['version']}"
+            print(f"  Uninstalling {key}" + (f" (from {source})" if source else " (orphan)"))
+            subprocess.run(["mise", "uninstall", key])
+
+
+def clean_shims():
+    # Wipe and regenerate
+    for shim in SHIMS_DIR.iterdir():
+        shim.unlink()
+    subprocess.run(["mise", "reshim"])
+
+    # Remove shims that don't resolve to anything
+    removed = []
+    for shim in SHIMS_DIR.iterdir():
+        result = subprocess.run(
+            ["mise", "which", shim.name],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            shim.unlink()
+            removed.append(shim.name)
+
+    if removed:
+        print(f"  Removed {len(removed)} stale shims: {', '.join(sorted(removed))}")
+
+
+def prune_old_global_versions():
+    subprocess.run(["mise", "prune", "-y"])
+
+
+def main():
+    print("Cleaning non-global tool versions...")
+    uninstall_non_global()
+
+    print("Pruning old global versions...")
+    prune_old_global_versions()
+
+    print("Cleaning shims...")
+    clean_shims()
+
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()

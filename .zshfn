@@ -1,5 +1,9 @@
 #SYSTEM
 
+function mise-clean {
+  command mise-clean
+}
+
 function update-system {
   local OS_TYPE=$(uname -s)
 
@@ -17,7 +21,7 @@ function update-system {
       echo "Unsuported system!"
   fi
 
-  bin-update; mise upgrade -y; mise prune -y; mise install; claude-update;
+  bin-update; mise upgrade -y; mise install; mise-clean; claude-update;
 }
 
 
