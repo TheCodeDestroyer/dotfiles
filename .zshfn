@@ -17,7 +17,7 @@ function update-system {
       echo "Unsuported system!"
   fi
 
-  bin-update; mise upgrade -y; mise prune -y; mise install;
+  bin-update; mise upgrade -y; mise prune -y; mise install; claude-update;
 }
 
 

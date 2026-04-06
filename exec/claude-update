@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# claude-update - Update Claude Code plugins and marketplaces
+
+echo
+echo "================================================================"
+echo "================ UPDATING CLAUDE CODE =========================="
+echo "================================================================"
+echo
+
+if ! command -v claude &>/dev/null; then
+    echo "Claude Code CLI not found, skipping"
+    exit 0
+fi
+
+echo "Updating marketplaces..."
+claude plugin marketplace update 2>/dev/null && echo "Marketplaces updated"
+
+echo
+echo "Updating plugins..."
+claude plugin list 2>/dev/null | awk '/❯/{match($0, /[a-z0-9-]+@[a-z0-9-]+/); if (RSTART) name=substr($0, RSTART, RLENGTH)} /Scope: user/ && name{print name; name=""}' | while read -r plugin; do
+    echo "  Updating $plugin..."
+    claude plugin update "$plugin" 2>/dev/null
+done
+echo "Plugins updated"
