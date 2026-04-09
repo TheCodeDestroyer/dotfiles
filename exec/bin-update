@@ -39,7 +39,7 @@ echo "Linking config files..."
 ln -sf ~/bin/.zshrc ~/.zshrc && echo "Linked .zshrc"
 ln -sf ~/bin/.zshenv ~/.zshenv && echo "Linked .zshenv"
 ln -sf ~/bin/.zshfn ~/.zshfn && echo "Linked .zshfn"
-ln -sf ~/bin/.npmrc ~/.npmrc && echo "Linked .npmrc"
+[ ! -f ~/.npmrc ] && cp ~/bin/.npmrc.template ~/.npmrc && echo "Created .npmrc from template"
 mkdir -p ~/.config/sheldon
 ln -sf ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Linked sheldon.toml"
 mkdir -p ~/.claude

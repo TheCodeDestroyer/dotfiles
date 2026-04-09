@@ -35,3 +35,4 @@ exec/studio
 exec/goland
 node_modules
 .gitconfig
+.npmrc
