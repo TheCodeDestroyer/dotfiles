@@ -23,3 +23,7 @@ claude plugin list 2>/dev/null | awk '/❯/{match($0, /[a-z0-9-]+@[a-z0-9-]+/); 
     claude plugin update "$plugin" 2>/dev/null
 done
 echo "Plugins updated"
+
+echo
+echo "Updating skills..."
+npx skills update 2>/dev/null && echo "Skills updated"

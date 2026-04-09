@@ -165,12 +165,31 @@ if [ -n "$rate_5h_pct" ]; then
   rate_5h_str+="${RESET}"
 fi
 
+# ── Peak hours indicator (weekdays 5:00-11:00 PT) ──
+peak_str=""
+read pt_wd pt_h pt_m < <(TZ=America/Los_Angeles date '+%u %H %M')
+pt_mins=$(( 10#$pt_h * 60 + 10#$pt_m ))
+if [ "$pt_wd" -le 5 ] && [ "$pt_mins" -ge 300 ] && [ "$pt_mins" -lt 660 ]; then
+  remain=$(( 660 - pt_mins ))
+  rh=$(( remain / 60 ))
+  rm=$(( remain % 60 ))
+  if [ "$rh" -gt 0 ]; then
+    peak_str="${BRIGHT_RED}PEAK${RESET}${DIM} (${rh}h${rm}m left)${RESET}"
+  else
+    peak_str="${BRIGHT_RED}PEAK${RESET}${DIM} (${rm}m left)${RESET}"
+  fi
+fi
+
 # ── Line 1: Model | Context | 5h Rate | Duration (Cost) ──
 line1="${BOLD}${CYAN}${model}${RESET}"
 line1+="${SEP}${ctx_color}${tokens_fmt}/${ctx_fmt} (${ctx_pct_str})${RESET}"
 
 if [ -n "$rate_5h_str" ]; then
   line1+="${SEP}${rate_5h_str}"
+fi
+
+if [ -n "$peak_str" ]; then
+  line1+="${SEP}${peak_str}"
 fi
 
 if [ "$duration_sec" -gt 0 ] || [ -n "$cost_str" ]; then
