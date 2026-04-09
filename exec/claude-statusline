@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ~/.claude/statusline.sh
 # Fast local Claude Code status line with color-coded context, git info, and cost.
+# Compatible with bash 3.2 (macOS default).
 
 RESET="\033[0m"
 BOLD="\033[1m"
@@ -16,62 +17,113 @@ BRIGHT_YELLOW="\033[93m"
 MAGENTA="\033[35m"
 BRIGHT_MAGENTA="\033[95m"
 
-# Single jq call to extract all fields (newline-delimited to handle spaces in model name)
+SEP="${DIM} | ${RESET}"
+
+# ── Layout config ──
+# Each segment has a line assignment. To rearrange, change the number.
+#   segment    line
+L_MODEL=1;    L_CONTEXT=1;  L_RATE=1;  L_PEAK=1
+L_GIT=2
+L_TASK=3
+
+# Segment visibility thresholds
+T_RATE=50
+
+# Line accumulators (pipe-delimited, joined at render)
+_L1="" _L2="" _L3=""
+
+add() {
+  local line="$1" value="$2"
+  [ -z "$value" ] && return
+  case "$line" in
+    1) [ -n "$_L1" ] && _L1+="$SEP"; _L1+="$value" ;;
+    2) [ -n "$_L2" ] && _L2+="$SEP"; _L2+="$value" ;;
+    3) [ -n "$_L3" ] && _L3+="$SEP"; _L3+="$value" ;;
+  esac
+}
+
+# ── Parse stdin JSON ──
 {
   read -r model
   read -r used_pct
   read -r total_input
   read -r ctx_size
-  read -r duration_ms
-  read -r cost_usd
-  read -r lines_added
-  read -r lines_removed
   read -r rate_5h_pct
   read -r rate_5h_resets
+  read -r session_id
 } < <(
   jq -r '
     ((.model.display_name // "Claude") | sub(" \\(.*$"; "")),
     (.context_window.used_percentage // ""),
     (((.context_window.used_percentage // 0) / 100 * (.context_window.context_window_size // 0)) | floor),
     ((.context_window.context_window_size // 0) | floor),
-    ((.cost.total_duration_ms // 0) | floor),
-    (.cost.total_cost_usd // ""),
-    ((.cost.total_lines_added // 0) | floor),
-    ((.cost.total_lines_removed // 0) | floor),
     (.rate_limits.five_hour.used_percentage // ""),
-    (.rate_limits.five_hour.resets_at // "")
+    (.rate_limits.five_hour.resets_at // ""),
+    (.session_id // "")
   '
 )
 
-# Format token counts using bash arithmetic (avoids bc forks)
+# ── Format helpers ──
 format_tokens() {
   local val="$1" round="$2"
-  if [ -z "$val" ] || [ "$val" = "0" ]; then
-    echo "0"
-    return
-  fi
+  if [ -z "$val" ] || [ "$val" = "0" ]; then echo "0"; return; fi
   if [ "$val" -ge 1000000 ]; then
-    local whole=$(( val / 1000000 ))
-    local frac=$(( (val % 1000000) / 100000 ))
-    if [ "$round" = "1" ]; then
-      printf "%dM" "$whole"
-    else
-      printf "%d.%dM" "$whole" "$frac"
-    fi
+    local whole=$(( val / 1000000 )) frac=$(( (val % 1000000) / 100000 ))
+    [ "$round" = "1" ] && printf "%dM" "$whole" || printf "%d.%dM" "$whole" "$frac"
   else
-    local whole=$(( val / 1000 ))
-    local frac=$(( (val % 1000) / 100 ))
-    if [ "$round" = "1" ]; then
-      printf "%dk" "$whole"
-    else
-      printf "%d.%dk" "$whole" "$frac"
-    fi
+    local whole=$(( val / 1000 )) frac=$(( (val % 1000) / 100 ))
+    [ "$round" = "1" ] && printf "%dk" "$whole" || printf "%d.%dk" "$whole" "$frac"
   fi
 }
 
+# ── Build segments ──
+
+# Model
+add $L_MODEL "${BOLD}${CYAN}${model}${RESET}"
+
+# Git
+git_seg=""
+git_dir=$(git -c gc.auto=0 rev-parse --git-dir 2>/dev/null)
+if [ -n "$git_dir" ]; then
+  branch=$(git -c gc.auto=0 branch --show-current 2>/dev/null)
+  if [ -n "$branch" ]; then
+    git_seg="${BLUE} ${branch}${RESET}"
+
+    [ -f "$git_dir/commondir" ] && git_seg+=" ${BRIGHT_YELLOW}[worktree]${RESET}"
+
+    diff_parts=""
+    diff_stat=$(git -c gc.auto=0 diff --numstat HEAD 2>/dev/null)
+    if [ -n "$diff_stat" ]; then
+      added=0 removed=0
+      while IFS=$'\t' read -r a r _; do
+        [[ "$a" =~ ^[0-9]+$ ]] && added=$(( added + a ))
+        [[ "$r" =~ ^[0-9]+$ ]] && removed=$(( removed + r ))
+      done <<< "$diff_stat"
+      if [ "$added" != "0" ] || [ "$removed" != "0" ]; then
+        diff_parts="${BRIGHT_GREEN}+${added}${RESET},${RED}-${removed}${RESET}"
+      fi
+    fi
+
+    untracked=$(git -c gc.auto=0 ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+    staged_new=$(git -c gc.auto=0 diff --cached --name-only --diff-filter=A 2>/dev/null | wc -l | tr -d ' ')
+    new_files=$(( untracked + staged_new ))
+    new_str=""
+    [ "$new_files" -gt 0 ] && new_str="${CYAN}?${new_files}${RESET}"
+
+    if [ -n "$diff_parts" ] || [ -n "$new_str" ]; then
+      git_seg+="  ("
+      [ -n "$diff_parts" ] && git_seg+="$diff_parts"
+      [ -n "$diff_parts" ] && [ -n "$new_str" ] && git_seg+="${DIM} | ${RESET}"
+      [ -n "$new_str" ] && git_seg+="$new_str"
+      git_seg+=")"
+    fi
+  fi
+fi
+add $L_GIT "$git_seg"
+
+# Context
 tokens_fmt=$(format_tokens "$total_input" "0")
 ctx_fmt=$(format_tokens "$ctx_size" "1")
-
 ctx_color="$BRIGHT_GREEN"
 if [ -n "$used_pct" ]; then
   pct_int=$(printf "%.0f" "$used_pct" 2>/dev/null || echo 0)
@@ -84,145 +136,54 @@ if [ -n "$used_pct" ]; then
 else
   ctx_pct_str="0%"
 fi
+add $L_CONTEXT "${ctx_color}${tokens_fmt}/${ctx_fmt} (${ctx_pct_str})${RESET}"
 
-duration_sec=$(( duration_ms / 1000 ))
-dur_h=$(( duration_sec / 3600 ))
-dur_m=$(( (duration_sec % 3600) / 60 ))
-if [ "$dur_h" -gt 0 ]; then
-  dur_str="${dur_h}h ${dur_m}m"
-else
-  dur_str="${dur_m}m"
-fi
-
-if [ -n "$cost_usd" ] && [ "$cost_usd" != "0" ]; then
-  cost_str=$(printf "\$%.2f" "$cost_usd")
-else
-  cost_str=""
-fi
-
-git_branch=""
-git_diff=""
-git_status_str=""
-is_worktree=false
-git_dir=$(git -c gc.auto=0 rev-parse --git-dir 2>/dev/null)
-if [ -n "$git_dir" ]; then
-  git_branch=$(git -c gc.auto=0 branch --show-current 2>/dev/null)
-
-  # Worktrees have a commondir file pointing to the main repo
-  if [ -f "$git_dir/commondir" ]; then
-    is_worktree=true
-  fi
-
-  # Live diff stats from working tree (staged + unstaged)
-  diff_stat=$(git -c gc.auto=0 diff --numstat HEAD 2>/dev/null)
-  if [ -n "$diff_stat" ]; then
-    live_added=0
-    live_removed=0
-    while IFS=$'\t' read -r a r _; do
-      [[ "$a" =~ ^[0-9]+$ ]] && live_added=$(( live_added + a ))
-      [[ "$r" =~ ^[0-9]+$ ]] && live_removed=$(( live_removed + r ))
-    done <<< "$diff_stat"
-    if [ "$live_added" != "0" ] || [ "$live_removed" != "0" ]; then
-      git_diff="${BRIGHT_GREEN}+${live_added}${RESET},${RED}-${live_removed}${RESET}"
-    fi
-  fi
-
-  # Untracked / new files indicator
-  untracked=$(git -c gc.auto=0 ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
-  staged_new=$(git -c gc.auto=0 diff --cached --name-only --diff-filter=A 2>/dev/null | wc -l | tr -d ' ')
-  new_files=$(( untracked + staged_new ))
-  if [ "$new_files" -gt 0 ]; then
-    git_status_str="${CYAN}?${new_files}${RESET}"
-  fi
-fi
-
-SEP="${DIM} | ${RESET}"
-
-# ── 5h rate limit: compute before line 1 ──
-rate_5h_str=""
+# 5h rate limit (threshold-gated)
+rate_seg=""
 if [ -n "$rate_5h_pct" ]; then
   rate_int=$(printf "%.0f" "$rate_5h_pct" 2>/dev/null || echo 0)
-  if   [ "$rate_int" -ge 90 ]; then rate_color="$BRIGHT_RED"
-  elif [ "$rate_int" -ge 75 ]; then rate_color="$RED"
-  elif [ "$rate_int" -ge 50 ]; then rate_color="$BRIGHT_MAGENTA"
-  else rate_color="$MAGENTA"
-  fi
-  rate_pct_str=$(printf "%g%%" "$rate_5h_pct")
-  rate_5h_str="${rate_color}5h: ${rate_pct_str}"
-  if [ -n "$rate_5h_resets" ]; then
-    now=$(date +%s)
-    remaining=$(( rate_5h_resets - now ))
-    if [ "$remaining" -lt 0 ]; then remaining=0; fi
-    rem_h=$(( remaining / 3600 ))
-    rem_m=$(( (remaining % 3600 + 30) / 60 ))
-    if [ "$rem_m" -ge 60 ]; then
-      rem_h=$(( rem_h + 1 ))
-      rem_m=0
+  if [ "$rate_int" -ge "$T_RATE" ]; then
+    if   [ "$rate_int" -ge 90 ]; then rate_color="$BRIGHT_RED"
+    elif [ "$rate_int" -ge 75 ]; then rate_color="$RED"
+    else rate_color="$BRIGHT_MAGENTA"
     fi
-    countdown=$(printf "%d:%02d" "$rem_h" "$rem_m")
-    rate_5h_str+=" (${countdown})"
+    rate_seg="${rate_color}5h: $(printf "%g%%" "$rate_5h_pct")"
+    if [ -n "$rate_5h_resets" ]; then
+      remaining=$(( rate_5h_resets - $(date +%s) ))
+      [ "$remaining" -lt 0 ] && remaining=0
+      rem_h=$(( remaining / 3600 ))
+      rem_m=$(( (remaining % 3600 + 30) / 60 ))
+      [ "$rem_m" -ge 60 ] && rem_h=$(( rem_h + 1 )) && rem_m=0
+      rate_seg+=" ($(printf "%d:%02d" "$rem_h" "$rem_m"))"
+    fi
+    rate_seg+="${RESET}"
   fi
-  rate_5h_str+="${RESET}"
 fi
+add $L_RATE "$rate_seg"
 
-# ── Peak hours indicator (weekdays 5:00-11:00 PT) ──
-peak_str=""
+# Peak hours (weekdays 5:00-11:00 PT)
+peak_seg=""
 read pt_wd pt_h pt_m < <(TZ=America/Los_Angeles date '+%u %H %M')
 pt_mins=$(( 10#$pt_h * 60 + 10#$pt_m ))
 if [ "$pt_wd" -le 5 ] && [ "$pt_mins" -ge 300 ] && [ "$pt_mins" -lt 660 ]; then
-  remain=$(( 660 - pt_mins ))
-  rh=$(( remain / 60 ))
-  rm=$(( remain % 60 ))
-  if [ "$rh" -gt 0 ]; then
-    peak_str="${BRIGHT_RED}PEAK${RESET}${DIM} (${rh}h${rm}m left)${RESET}"
-  else
-    peak_str="${BRIGHT_RED}PEAK${RESET}${DIM} (${rm}m left)${RESET}"
+  peak_seg="${BRIGHT_RED}PEAK${RESET}"
+fi
+add $L_PEAK "$peak_seg"
+
+# Current task
+task_seg=""
+todos_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/todos"
+if [ -n "$session_id" ] && [ -d "$todos_dir" ]; then
+  latest=$(ls -t "$todos_dir"/${session_id}-agent-*.json 2>/dev/null | head -1)
+  if [ -n "$latest" ]; then
+    task=$(jq -r '[.[] | select(.status == "in_progress")][0].activeForm // empty' "$latest" 2>/dev/null)
+    [ -n "$task" ] && task_seg="${BOLD}${BRIGHT_YELLOW}${task}${RESET}"
   fi
 fi
+add $L_TASK "$task_seg"
 
-# ── Line 1: Model | Context | 5h Rate | Duration (Cost) ──
-line1="${BOLD}${CYAN}${model}${RESET}"
-line1+="${SEP}${ctx_color}${tokens_fmt}/${ctx_fmt} (${ctx_pct_str})${RESET}"
-
-if [ -n "$rate_5h_str" ]; then
-  line1+="${SEP}${rate_5h_str}"
-fi
-
-if [ -n "$peak_str" ]; then
-  line1+="${SEP}${peak_str}"
-fi
-
-if [ "$duration_sec" -gt 0 ] || [ -n "$cost_str" ]; then
-  line1+="${SEP}${DIM}"
-  if [ "$duration_sec" -gt 0 ]; then
-    line1+="${dur_str}"
-  fi
-  if [ -n "$cost_str" ]; then
-    line1+=" (${cost_str})"
-  fi
-  line1+="${RESET}"
-fi
-
-printf "%b\n" "$line1"
-
-# ── Line 2: Git branch + worktree + diff stats ──
-if [ -n "$git_branch" ]; then
-  line2="${BLUE} ${git_branch}${RESET}"
-  if [ "$is_worktree" = true ]; then
-    line2+=" ${BRIGHT_YELLOW}[worktree]${RESET}"
-  fi
-  if [ -n "$git_diff" ] || [ -n "$git_status_str" ]; then
-    line2+="  ("
-    if [ -n "$git_diff" ]; then
-      line2+="${git_diff}"
-    fi
-    if [ -n "$git_diff" ] && [ -n "$git_status_str" ]; then
-      line2+="${DIM} | ${RESET}"
-    fi
-    if [ -n "$git_status_str" ]; then
-      line2+="${git_status_str}"
-    fi
-    line2+=")"
-  fi
-  printf "%b\n" "$line2"
-fi
+# ── Render ──
+[ -n "$_L1" ] && printf "%b\n" "$_L1"
+[ -n "$_L2" ] && printf "%b\n" "$_L2"
+[ -n "$_L3" ] && printf "%b\n" "$_L3"
+exit 0
