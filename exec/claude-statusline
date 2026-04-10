@@ -55,7 +55,7 @@ add() {
   jq -r '
     ((.model.display_name // "Claude") | sub(" \\(.*$"; "")),
     (.context_window.used_percentage // ""),
-    (((.context_window.used_percentage // 0) / 100 * (.context_window.context_window_size // 0)) | floor),
+    (((.context_window.current_usage.input_tokens // 0) + (.context_window.current_usage.cache_creation_input_tokens // 0) + (.context_window.current_usage.cache_read_input_tokens // 0)) | floor),
     ((.context_window.context_window_size // 0) | floor),
     (.rate_limits.five_hour.used_percentage // ""),
     (.rate_limits.five_hour.resets_at // ""),
@@ -69,10 +69,12 @@ format_tokens() {
   if [ -z "$val" ] || [ "$val" = "0" ]; then echo "0"; return; fi
   if [ "$val" -ge 1000000 ]; then
     local whole=$(( val / 1000000 )) frac=$(( (val % 1000000) / 100000 ))
-    [ "$round" = "1" ] && printf "%dM" "$whole" || printf "%d.%dM" "$whole" "$frac"
+    if [ "$round" = "1" ] || [ "$frac" -eq 0 ]; then printf "%dM" "$whole"
+    else printf "%d.%dM" "$whole" "$frac"; fi
   else
     local whole=$(( val / 1000 )) frac=$(( (val % 1000) / 100 ))
-    [ "$round" = "1" ] && printf "%dk" "$whole" || printf "%d.%dk" "$whole" "$frac"
+    if [ "$round" = "1" ] || [ "$frac" -eq 0 ]; then printf "%dk" "$whole"
+    else printf "%d.%dk" "$whole" "$frac"; fi
   fi
 }
 
@@ -138,26 +140,25 @@ else
 fi
 add $L_CONTEXT "${ctx_color}${tokens_fmt}/${ctx_fmt} (${ctx_pct_str})${RESET}"
 
-# 5h rate limit (threshold-gated)
+# 5h rate limit (always show %; timer only at threshold)
 rate_seg=""
 if [ -n "$rate_5h_pct" ]; then
   rate_int=$(printf "%.0f" "$rate_5h_pct" 2>/dev/null || echo 0)
-  if [ "$rate_int" -ge "$T_RATE" ]; then
-    if   [ "$rate_int" -ge 90 ]; then rate_color="$BRIGHT_RED"
-    elif [ "$rate_int" -ge 75 ]; then rate_color="$RED"
-    else rate_color="$BRIGHT_MAGENTA"
-    fi
-    rate_seg="${rate_color}5h: $(printf "%g%%" "$rate_5h_pct")"
-    if [ -n "$rate_5h_resets" ]; then
-      remaining=$(( rate_5h_resets - $(date +%s) ))
-      [ "$remaining" -lt 0 ] && remaining=0
-      rem_h=$(( remaining / 3600 ))
-      rem_m=$(( (remaining % 3600 + 30) / 60 ))
-      [ "$rem_m" -ge 60 ] && rem_h=$(( rem_h + 1 )) && rem_m=0
-      rate_seg+=" ($(printf "%d:%02d" "$rem_h" "$rem_m"))"
-    fi
-    rate_seg+="${RESET}"
+  if   [ "$rate_int" -ge 90 ]; then rate_color="$BRIGHT_RED"
+  elif [ "$rate_int" -ge 75 ]; then rate_color="$RED"
+  elif [ "$rate_int" -ge 50 ]; then rate_color="$BRIGHT_MAGENTA"
+  else rate_color="$MAGENTA"
   fi
+  rate_seg="${rate_color}5h: $(printf "%g%%" "$rate_5h_pct")"
+  if [ "$rate_int" -ge "$T_RATE" ] && [ -n "$rate_5h_resets" ]; then
+    remaining=$(( rate_5h_resets - $(date +%s) ))
+    [ "$remaining" -lt 0 ] && remaining=0
+    rem_h=$(( remaining / 3600 ))
+    rem_m=$(( (remaining % 3600 + 30) / 60 ))
+    [ "$rem_m" -ge 60 ] && rem_h=$(( rem_h + 1 )) && rem_m=0
+    rate_seg+=" ($(printf "%d:%02d" "$rem_h" "$rem_m"))"
+  fi
+  rate_seg+="${RESET}"
 fi
 add $L_RATE "$rate_seg"
 

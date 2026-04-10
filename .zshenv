@@ -86,5 +86,7 @@ alias pmy="pm why"
 
 
 # GIT
-alias gcmi="git commit"
 alias gcstg="git checkout staging"
+
+# CLAUDE
+alias claude-ow='CLAUDE_CONFIG_DIR=~/.claude-ow ~/.local/bin/claude'
