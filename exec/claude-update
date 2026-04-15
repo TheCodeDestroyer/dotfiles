@@ -13,16 +13,8 @@ if ! command -v claude &>/dev/null; then
     exit 0
 fi
 
-echo "Updating marketplaces..."
-claude plugin marketplace update 2>/dev/null && echo "Marketplaces updated"
-
-echo
-echo "Updating plugins..."
-claude plugin list 2>/dev/null | awk '/❯/{match($0, /[a-z0-9-]+@[a-z0-9-]+/); if (RSTART) name=substr($0, RSTART, RLENGTH)} /Scope: user/ && name{print name; name=""}' | while read -r plugin; do
-    echo "  Updating $plugin..."
-    claude plugin update "$plugin" 2>/dev/null
-done
-echo "Plugins updated"
+echo "Updating marketplaces and plugins..."
+claude plugin marketplace update 2>/dev/null && echo "Marketplaces and plugins updated"
 
 echo
 echo "Updating skills..."
