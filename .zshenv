@@ -15,7 +15,6 @@ setopt HIST_BEEP
 ## Common
 export PATH="${HOME}/bin/exec:$PATH"
 export PATH="${HOME}/.local/bin:$PATH"
-export GIDEON_HOME="${HOME}/Work/gideon"
 
 ## Mise (static shims PATH for non-interactive shells, hook mode via ohmyzsh plugin for interactive)
 export PATH="$HOME/.local/share/mise/shims:$PATH"
@@ -37,7 +36,6 @@ export NPM_EMAIL="op://private/npm/username"
 export DOCKER_USERNAME="op://private/docker/username"
 export DOCKER_AUTH_TOKEN="op://private/docker/auth/token"
 export CONVEX_AUTH_TOKEN="op://private/convex/auth/token"
-export CONVEX_WOKR_AUTH_TOKEN="op://optiweb/convex - ow/auth/token"
 
 # Sheldon
 local OS_TYPE=$(uname -s)
@@ -51,8 +49,8 @@ fi
 
 # Aliases
 
-alias ghee-default="ghee set --email the.code.destroyer@gmail.com"
-alias ghee-work="ghee set --email nace.logar@optiweb.com"
+alias ghee-default='ghee set --email "$GIT_EMAIL_PERSONAL"'
+alias ghee-work='ghee set --email "$GIT_EMAIL_WORK"'
 
 alias ls='lsd'
 
@@ -88,5 +86,3 @@ alias pmy="pm why"
 # GIT
 alias gcstg="git checkout staging"
 
-# CLAUDE
-alias claude-ow='CLAUDE_CONFIG_DIR=~/.claude-ow ~/.local/bin/claude'
