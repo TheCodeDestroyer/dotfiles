@@ -85,28 +85,13 @@ function pm
 
 
 # BEADS
-
-function _bd-repo-slug
-{
-  local root=$1
-  printf '%s-%s' "${root:t}" "$(printf '%s' "$root" | shasum | cut -c1-8)"
-}
-
-function _bd-beads-dir
-{
-  local root
-  root=$(git rev-parse --show-toplevel 2>/dev/null)
-  if [[ -n "$root" ]]; then
-    printf '%s\n' "$HOME/.beads-data/$(_bd-repo-slug "$root")/.beads"
-  else
-    printf '%s\n' "$HOME/.beads-data/_global/.beads"
-  fi
-}
+# Dir resolution lives in ~/bin/exec/beads-dir so the Claude Code
+# SessionStart hook can call it without sourcing this file.
 
 function _bd-init
 {
   local target
-  target=$(_bd-beads-dir)
+  target=$(beads-dir)
   mkdir -p "${target:h}"
 
   BEADS_DIR="$target" command bd init "$@" || return $?
@@ -121,14 +106,14 @@ function bd
     return $?
   fi
 
-  BEADS_DIR="$(_bd-beads-dir)" command bd "$@"
+  BEADS_DIR="$(beads-dir)" command bd "$@"
 }
 
 # PUBLIC: callable standalone to fix projects that are DB-initialized
 # but have no backup destination configured. Do NOT rename to _bd-*.
 function bd-backup-init
 {
-  local target=${1:-$(_bd-beads-dir)} root backup_dest
+  local target=${1:-$(beads-dir)} root backup_dest slug
   root=$(git rev-parse --show-toplevel 2>/dev/null)
   [[ -z "$root" ]] && return 0
   [[ -f "$target/dolt-backup.json" ]] && return 0
@@ -138,7 +123,8 @@ function bd-backup-init
     return 1
   fi
 
-  backup_dest="$BEADS_BACKUP_ROOT/$(_bd-repo-slug "$root")"
+  slug=${target:h:t}
+  backup_dest="$BEADS_BACKUP_ROOT/$slug"
   mkdir -p "${backup_dest:h}"
 
   BEADS_DIR="$target" command bd backup init "$backup_dest" --quiet 2>/dev/null \

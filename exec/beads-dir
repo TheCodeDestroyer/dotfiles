@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# beads-dir - Resolve the per-repo BEADS_DIR path outside the repo tree.
+#
+# Prints the path to this repo's .beads/ dir under ~/.beads-data/,
+# keyed by repo basename + short hash of the full repo path (so two
+# same-named repos under different parents don't collide).
+#
+# Falls back to ~/.beads-data/_global/.beads when not inside a git repo.
+#
+# Used by:
+#   - bd wrapper function in ~/bin/.zshfn (BEADS_DIR=$(beads-dir) command bd ...)
+#   - Claude Code SessionStart hook in .claude/settings.json
+
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+
+if [[ -z "$root" ]]; then
+  printf '%s\n' "$HOME/.beads-data/_global/.beads"
+  exit 0
+fi
+
+slug=$(printf '%s-%s' "$(basename "$root")" "$(printf '%s' "$root" | shasum | cut -c1-8)")
+printf '%s\n' "$HOME/.beads-data/$slug/.beads"
