@@ -133,7 +133,12 @@ function bd-backup-init
   [[ -z "$root" ]] && return 0
   [[ -f "$target/dolt-backup.json" ]] && return 0
 
-  backup_dest="${BEADS_BACKUP_ROOT:-$HOME/.beads-backups}/$(_bd-repo-slug "$root")"
+  if [[ -z "$BEADS_BACKUP_ROOT" ]]; then
+    echo "bd-backup-init: BEADS_BACKUP_ROOT is not set (add to ~/.zprofile)" >&2
+    return 1
+  fi
+
+  backup_dest="$BEADS_BACKUP_ROOT/$(_bd-repo-slug "$root")"
   mkdir -p "${backup_dest:h}"
 
   BEADS_DIR="$target" command bd backup init "$backup_dest" --quiet 2>/dev/null \
