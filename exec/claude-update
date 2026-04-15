@@ -26,4 +26,4 @@ echo "Plugins updated"
 
 echo
 echo "Updating skills..."
-npx skills update 2>/dev/null && echo "Skills updated"
+npx skills update -g 2>/dev/null && echo "Skills updated"
