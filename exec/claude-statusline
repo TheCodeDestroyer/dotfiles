@@ -140,7 +140,7 @@ else
 fi
 add $L_CONTEXT "${ctx_color}${tokens_fmt}/${ctx_fmt} (${ctx_pct_str})${RESET}"
 
-# 5h rate limit (always show %; timer only at threshold)
+# 5h rate limit
 rate_seg=""
 if [ -n "$rate_5h_pct" ]; then
   rate_int=$(printf "%.0f" "$rate_5h_pct" 2>/dev/null || echo 0)
@@ -150,13 +150,11 @@ if [ -n "$rate_5h_pct" ]; then
   else rate_color="$MAGENTA"
   fi
   rate_seg="${rate_color}5h: $(printf "%g%%" "$rate_5h_pct")"
-  if [ "$rate_int" -ge "$T_RATE" ] && [ -n "$rate_5h_resets" ]; then
+  if [ -n "$rate_5h_resets" ]; then
     remaining=$(( rate_5h_resets - $(date +%s) ))
     [ "$remaining" -lt 0 ] && remaining=0
-    rem_h=$(( remaining / 3600 ))
-    rem_m=$(( (remaining % 3600 + 30) / 60 ))
-    [ "$rem_m" -ge 60 ] && rem_h=$(( rem_h + 1 )) && rem_m=0
-    rate_seg+=" ($(printf "%d:%02d" "$rem_h" "$rem_m"))"
+    rem_dh=$(( remaining * 10 / 3600 ))
+    rate_seg+=" ($(( rem_dh / 10 )).$(( rem_dh % 10 ))h)"
   fi
   rate_seg+="${RESET}"
 fi
