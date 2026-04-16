@@ -13,8 +13,11 @@ if ! command -v claude &>/dev/null; then
     exit 0
 fi
 
-echo "Updating marketplaces and plugins..."
-claude plugin marketplace update 2>/dev/null && echo "Marketplaces and plugins updated"
+IFS=',' read -ra config_roots <<< "${CLAUDE_CONFIG_ROOTS:-$HOME/.claude}"
+for root in "${config_roots[@]}"; do
+    echo "Updating marketplaces and plugins for ${root}..."
+    CLAUDE_CONFIG_DIR="$root" claude plugin marketplace update 2>/dev/null && echo "  Done"
+done
 
 echo
 echo "Updating skills..."
