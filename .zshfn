@@ -84,36 +84,15 @@ function pm
 }
 
 
-# BEADS
-# Dir resolution lives in ~/bin/exec/beads-dir so the Claude Code
-# SessionStart hook can call it without sourcing this file.
-
-function _bd-init
-{
-  local target
-  target=$(beads-dir)
-  mkdir -p "${target:h}"
-
-  BEADS_DIR="$target" command bd init "$@" || return $?
-  bd-backup-init "$target"
-}
-
-function bd
-{
-  if [[ "$1" == "init" ]]; then
-    shift
-    _bd-init "$@"
-    return $?
-  fi
-
-  BEADS_DIR="$(beads-dir)" command bd "$@"
-}
-
 # PUBLIC: callable standalone to fix projects that are DB-initialized
-# but have no backup destination configured. Do NOT rename to _bd-*.
+# but have no backup destination configured. Pass the .beads/ path explicitly.
 function bd-backup-init
 {
-  local target=${1:-$(beads-dir)} root backup_dest slug
+  if [[ -z "$1" ]]; then
+    echo "bd-backup-init: usage: bd-backup-init <path-to-.beads>" >&2
+    return 2
+  fi
+  local target=$1 root backup_dest slug
   root=$(git rev-parse --show-toplevel 2>/dev/null)
   [[ -z "$root" ]] && return 0
   [[ -f "$target/dolt-backup.json" ]] && return 0
@@ -129,4 +108,19 @@ function bd-backup-init
 
   BEADS_DIR="$target" command bd backup init "$backup_dest" --quiet 2>/dev/null \
     && echo "bd: backup configured → $backup_dest"
+}
+
+# PUBLIC: streamlined bd init for the shared-server + iCloud-backup model.
+# Adopts an existing DB (preserves project_id) and runs in stealth mode so
+# nothing leaks into the repo's git state.
+function bdi
+{
+  local root db
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    echo "bdi: not in a git repo" >&2
+    return 1
+  }
+  # Mirror bd's prefix-based DB naming (init.go:520-521): basename, '-' and '.' → '_'
+  db=${${${root:t}//-/_}//./_}
+  command bd init --shared-server --stealth --database "$db" "$@"
 }
