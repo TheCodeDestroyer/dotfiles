@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+# plannotator-update - sha-compare + replace ~/.local/bin/plannotator from
+# the latest GitHub release. Intentionally does NOT run upstream install.sh
+# and NEVER writes to ~/.claude/** — slash commands/skills come from the
+# plugin and must not be clobbered.
+#
+# Usage:
+#   plannotator-update           # update if drift
+#   plannotator-update --check   # exit 0 if up to date, 1 if drift (no write)
+
+set -euo pipefail
+
+REPO="backnotprop/plannotator"
+BIN="$HOME/.local/bin/plannotator"
+CHECK_ONLY=0
+
+case "${1:-}" in
+    --check) CHECK_ONLY=1 ;;
+    -h|--help)
+        sed -n '3,9p' "$0" | sed 's/^# \{0,1\}//'
+        exit 0
+        ;;
+    "") ;;
+    *) echo "unknown flag: $1" >&2; exit 2 ;;
+esac
+
+command -v gh >/dev/null || { echo "gh CLI not found" >&2; exit 1; }
+
+case "$(uname -s)" in
+    Darwin) os=darwin ;;
+    Linux)  os=linux  ;;
+    *) echo "unsupported OS: $(uname -s)" >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+    arm64|aarch64) arch=arm64 ;;
+    x86_64)        arch=x64   ;;
+    *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+esac
+ASSET="plannotator-${os}-${arch}"
+
+TAG=$(gh release view --repo "$REPO" --json tagName -q .tagName)
+[[ -n "$TAG" ]] || { echo "could not resolve latest tag" >&2; exit 1; }
+
+EXPECTED_SHA=$(gh release download "$TAG" --repo "$REPO" --pattern "${ASSET}.sha256" -O - | awk '{print $1}')
+[[ -n "$EXPECTED_SHA" ]] || { echo "could not fetch published sha" >&2; exit 1; }
+
+if [[ -f "$BIN" ]]; then
+    LOCAL_SHA=$(shasum -a 256 "$BIN" | awk '{print $1}')
+else
+    LOCAL_SHA=""
+fi
+
+if [[ "$LOCAL_SHA" == "$EXPECTED_SHA" ]]; then
+    echo "plannotator up to date ($TAG)"
+    exit 0
+fi
+
+if (( CHECK_ONLY )); then
+    echo "plannotator drift: local=${LOCAL_SHA:-<missing>} latest=$TAG"
+    exit 1
+fi
+
+mkdir -p "$(dirname "$BIN")"
+TMP=$(mktemp "${BIN}.XXXXXX")
+trap 'rm -f "$TMP"' EXIT
+
+echo "Downloading $ASSET @ $TAG..."
+gh release download "$TAG" --repo "$REPO" --pattern "$ASSET" -O "$TMP" --clobber
+
+GOT_SHA=$(shasum -a 256 "$TMP" | awk '{print $1}')
+if [[ "$GOT_SHA" != "$EXPECTED_SHA" ]]; then
+    echo "sha mismatch after download: got $GOT_SHA expected $EXPECTED_SHA" >&2
+    exit 1
+fi
+
+chmod +x "$TMP"
+mv "$TMP" "$BIN"
+trap - EXIT
+
+echo "plannotator updated → $TAG"

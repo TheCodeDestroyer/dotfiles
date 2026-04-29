@@ -22,3 +22,11 @@ done
 echo
 echo "Updating skills..."
 npx skills update -g 2>/dev/null && echo "Skills updated"
+
+echo
+echo "Updating plannotator..."
+if command -v plannotator-update &>/dev/null; then
+    plannotator-update
+else
+    echo "plannotator-update not found, skipping"
+fi
