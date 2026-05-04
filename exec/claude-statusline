@@ -81,7 +81,12 @@ format_tokens() {
 # ── Build segments ──
 
 # Model
-add $L_MODEL "${BOLD}${CYAN}${model}${RESET}"
+model_seg="${BOLD}${CYAN}${model}${RESET}"
+if [ -n "$session_id" ]; then
+  marker="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gideon/markers/${session_id}.jsonl"
+  [ -f "$marker" ] && model_seg+=" 💎"
+fi
+add $L_MODEL "$model_seg"
 
 # Git
 git_seg=""
