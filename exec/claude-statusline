@@ -22,7 +22,7 @@ SEP="${DIM} | ${RESET}"
 # ── Layout config ──
 # Each segment has a line assignment. To rearrange, change the number.
 #   segment    line
-L_MODEL=1;    L_CONTEXT=1;  L_RATE=1;  L_PEAK=1
+L_MODEL=1;    L_CONTEXT=1;  L_RATE=1
 L_GIT=2
 L_TASK=3
 
@@ -164,15 +164,6 @@ if [ -n "$rate_5h_pct" ]; then
   rate_seg+="${RESET}"
 fi
 add $L_RATE "$rate_seg"
-
-# Peak hours (weekdays 5:00-11:00 PT)
-peak_seg=""
-read pt_wd pt_h pt_m < <(TZ=America/Los_Angeles date '+%u %H %M')
-pt_mins=$(( 10#$pt_h * 60 + 10#$pt_m ))
-if [ "$pt_wd" -le 5 ] && [ "$pt_mins" -ge 300 ] && [ "$pt_mins" -lt 660 ]; then
-  peak_seg="${BRIGHT_RED}PEAK${RESET}"
-fi
-add $L_PEAK "$peak_seg"
 
 # Current task
 task_seg=""
