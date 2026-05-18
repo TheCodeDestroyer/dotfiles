@@ -21,7 +21,7 @@ done
 
 echo
 echo "Updating skills..."
-npx skills update -g 2>/dev/null && echo "Skills updated"
+npx --yes skills update -g 2>/dev/null && echo "Skills updated"
 
 echo
 echo "Updating plannotator..."
