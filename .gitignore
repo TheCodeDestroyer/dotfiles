@@ -41,3 +41,7 @@ node_modules
 .dolt/
 *.db
 .beads-credential-key
+
+# Beads: track only config.yaml (DoltHub remote travels to clones); ignore db/runtime
+.beads/*
+!.beads/config.yaml
