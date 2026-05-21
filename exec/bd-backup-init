@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+"""
+bd-backup-init - Configure an iCloud/off-machine backup destination for a beads DB.
+
+Callable standalone to fix projects that are DB-initialized but have no backup
+destination wired. Pass the project's .beads/ path explicitly.
+
+Backups land under $BEADS_BACKUP_ROOT/<project-dir-name>/. No-ops silently when
+run outside a git repo or when the project already has a backup configured
+(.beads/dolt-backup.json present).
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def git_root(cwd: str | Path | None = None) -> str | None:
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=(__doc__ or "").strip().splitlines()[0])
+    ap.add_argument("beads_path", help="path to the project's .beads directory")
+    args = ap.parse_args(argv)
+
+    target = Path(args.beads_path).resolve()
+
+    # Silently no-op when the target isn't inside a git repo (the path is
+    # explicit, so check it — not the process cwd).
+    if git_root(target) is None:
+        return 0
+    # Already configured -> nothing to do.
+    if (target / "dolt-backup.json").exists():
+        return 0
+
+    backup_root = os.environ.get("BEADS_BACKUP_ROOT")
+    if not backup_root:
+        print(
+            "bd-backup-init: BEADS_BACKUP_ROOT is not set (add to ~/.zprofile)",
+            file=sys.stderr,
+        )
+        return 1
+
+    slug = target.parent.name
+    backup_dest = Path(backup_root) / slug
+    backup_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    env = {**os.environ, "BEADS_DIR": str(target)}
+    r = subprocess.run(
+        ["bd", "backup", "init", str(backup_dest), "--quiet"],
+        env=env, capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        print(f"bd: backup configured → {backup_dest}")
+        return 0
+
+    print(
+        f"bd-backup-init: failed to configure backup: {r.stderr.strip()}",
+        file=sys.stderr,
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

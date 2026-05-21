@@ -30,6 +30,7 @@ fabric.properties
 # CUSTOM
 libs/
 .DS_Store
+__pycache__/
 exec/external
 exec/studio
 exec/goland

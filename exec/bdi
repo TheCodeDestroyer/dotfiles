@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+
+"""
+bdi - Streamlined `bd init` for the shared-server + DoltHub-federation model.
+
+One shot to fully wire beads federation for a fresh repo:
+  1. bd init --shared-server --skip-agents --skip-hooks --database <db>
+     (replaces the deprecated --stealth; we manage .gitignore ourselves so
+     .beads/config.yaml stays git-tracked and the remote travels to clones)
+  2. provision the per-project DoltHub repo via the API (idempotent: an
+     existing repo is reused)
+  3. set federation.remote + sync.remote, `bd config apply`, point the Dolt
+     origin at the resolvable https remote, then `bd dolt push`
+  4. ensure .gitignore ignores .beads/ runtime but tracks .beads/config.yaml
+
+The DoltHub owner is derived from the API token (GET /user) unless DOLT_HUB_OWNER
+is set. Requires DOLT_HUB_API_KEY (a DoltHub API token with create permission).
+
+Extra args are forwarded to `bd init`. Use --dry-run to preview without changes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+DOLTHUB_API = "https://www.dolthub.com/api/v1alpha1"
+VISIBILITY = "private"
+
+
+def git_root(cwd: str | Path | None = None) -> str | None:
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def db_name(root: str) -> str:
+    # Mirror bd's prefix-based DB naming: basename with '-' and '.' -> '_'.
+    return Path(root).name.replace("-", "_").replace(".", "_")
+
+
+def dolthub_api(method: str, path: str, token: str, body: dict | None = None):
+    """Call the DoltHub REST API. Returns (status_code, parsed_json)."""
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f"{DOLTHUB_API}/{path}", data=data, method=method)
+    req.add_header("authorization", f"token {token}")
+    if data is not None:
+        req.add_header("content-type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode()
+        try:
+            return e.code, json.loads(raw)
+        except json.JSONDecodeError:
+            return e.code, {"message": raw}
+
+
+def api_ok(status: int, payload: dict) -> bool:
+    return status == 200 and payload.get("status") == "Success"
+
+
+def api_error(status: int, payload: dict) -> str:
+    return f"HTTP {status}: {payload.get('message') or payload}"
+
+
+def ensure_gitignore(root: Path) -> None:
+    """Idempotently ignore .beads/ runtime while keeping config.yaml tracked."""
+    gi = root / ".gitignore"
+    lines = gi.read_text().splitlines() if gi.exists() else []
+    has_ignore = ".beads/*" in lines
+    has_negate = "!.beads/config.yaml" in lines
+    if has_ignore and has_negate:
+        return
+
+    additions: list[str] = []
+    if not has_ignore:
+        additions += [
+            "",
+            "# Beads: track only config.yaml (DoltHub remote travels to clones); ignore db/runtime",
+            ".beads/*",
+        ]
+    if not has_negate:
+        additions.append("!.beads/config.yaml")
+
+    # Drop the leading separator blank when the file is empty or already ends
+    # in a blank line.
+    if additions and additions[0] == "" and (not lines or lines[-1] == ""):
+        additions = additions[1:]
+
+    text = "\n".join(lines + additions).rstrip("\n") + "\n"
+    gi.write_text(text)
+    print(f"bdi: updated {gi} (track .beads/config.yaml)")
+
+
+def apply_config_keys(cfg: Path, keys: dict[str, str]) -> None:
+    """Ensure config.yaml has exactly one active `key: value` line per key.
+
+    Replaces any active or commented occurrence in place; appends the rest.
+    Done in a single read/write so the keys land atomically — a fresh `bd init`
+    ships a commented `# sync.remote:` placeholder, so `bd config set` can't be
+    relied on (it edits that placeholder in place but leaves it commented).
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for line in cfg.read_text().splitlines():
+        body = line.lstrip()
+        if body.startswith("#"):
+            body = body[1:].lstrip()
+        matched = next((k for k in keys if body.startswith(k + ":")), None)
+        if matched is not None:
+            if matched not in seen:
+                out.append(f"{matched}: {keys[matched]}")
+                seen.add(matched)
+            continue  # drop duplicates / the commented variant
+        out.append(line)
+    missing = [(k, v) for k, v in keys.items() if k not in seen]
+    if missing:
+        if out and out[-1].strip() != "":
+            out.append("")
+        out += [f"{k}: {v}" for k, v in missing]
+    cfg.write_text("\n".join(out).rstrip("\n") + "\n")
+
+
+def run(cmd: list[str]) -> int:
+    r = subprocess.run(cmd)
+    if r.returncode != 0:
+        print(f"bdi: `{' '.join(cmd)}` failed", file=sys.stderr)
+    return r.returncode
+
+
+def dolt_db_dir(db: str) -> Path | None:
+    """Locate the shared-server Dolt working dir for a database."""
+    default = Path.home() / ".beads" / "shared-server" / "dolt" / db
+    if default.is_dir():
+        return default
+    # Fall back to whatever `bd dolt show` reports as the server root.
+    r = subprocess.run(["bd", "dolt", "show"], capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        if line.strip().startswith("Server:"):
+            cand = Path(line.split("Server:", 1)[1].strip()) / "dolt" / db
+            if cand.is_dir():
+                return cand
+    return None
+
+
+def set_dolt_origin(db: str, url: str) -> bool:
+    """Force the Dolt `origin` remote to `url` in the database's repo_state.
+
+    bd writes the federation remote into repo_state.json verbatim as
+    `dolthub://owner/db` — a scheme the dolt CLI can't push to ("unknown url
+    scheme: 'dolthub'"). Every working repo stores origin as the resolved https
+    doltremoteapi URL instead. `bd dolt remote add` can't fix this in
+    shared-server mode (it aborts trying to remove a CLI remote that isn't
+    there), so set it directly in the db's Dolt dir — the same repo_state.json
+    `bd dolt push` reads.
+    """
+    db_dir = dolt_db_dir(db)
+    if db_dir is None:
+        print(f"bdi: could not locate the shared-server Dolt dir for {db}", file=sys.stderr)
+        return False
+    try:
+        # Remove any inherited/stale origin first (ignore "unknown remote").
+        subprocess.run(["dolt", "remote", "remove", "origin"], cwd=db_dir,
+                       capture_output=True, text=True)
+        r = subprocess.run(["dolt", "remote", "add", "origin", url], cwd=db_dir,
+                           capture_output=True, text=True)
+    except FileNotFoundError:
+        print("bdi: dolt CLI not found on PATH (needed to set the push remote)", file=sys.stderr)
+        return False
+    if r.returncode != 0:
+        print(f"bdi: failed to set Dolt origin: {r.stderr.strip()}", file=sys.stderr)
+        return False
+    return True
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=(__doc__ or "").strip().splitlines()[0])
+    ap.add_argument(
+        "--dry-run", action="store_true",
+        help="Print what would happen without making any changes",
+    )
+    args, passthrough = ap.parse_known_args(argv)
+
+    root = git_root()
+    if root is None:
+        print("bdi: not in a git repo", file=sys.stderr)
+        return 1
+    root_path = Path(root)
+    db = db_name(root)
+    # Bail before any external side effects if the dir yields a name bd/dolt
+    # and the DoltHub repo can't represent (anything beyond [A-Za-z0-9_]).
+    if not re.fullmatch(r"[A-Za-z0-9_]+", db):
+        print(
+            f"bdi: refusing db name {db!r} derived from the repo directory — "
+            "expected only letters, digits, and underscores. Rename the directory.",
+            file=sys.stderr,
+        )
+        return 1
+
+    token = os.environ.get("DOLT_HUB_API_KEY")
+    if not token:
+        print(
+            "bdi: DOLT_HUB_API_KEY is not set (DoltHub API token required to "
+            "provision the federation repo)",
+            file=sys.stderr,
+        )
+        return 1
+
+    owner = os.environ.get("DOLT_HUB_OWNER")
+    if not owner:
+        status, payload = dolthub_api("GET", "user", token)
+        if not api_ok(status, payload):
+            print(
+                f"bdi: could not resolve DoltHub owner from token ({api_error(status, payload)})",
+                file=sys.stderr,
+            )
+            return 1
+        owner = payload.get("username")
+        if not owner:
+            print("bdi: DoltHub /user response had no username", file=sys.stderr)
+            return 1
+
+    fed_remote = f"dolthub://{owner}/{db}"
+    sync_remote = f"https://doltremoteapi.dolthub.com/{owner}/{db}"
+
+    if args.dry_run:
+        extra = (" " + " ".join(passthrough)) if passthrough else ""
+        print("bdi: dry-run — no changes will be made")
+        print(f"  bd init     : --shared-server --skip-agents --skip-hooks --database {db}{extra}")
+        print(f"  DoltHub repo: POST /database → {owner}/{db} (visibility={VISIBILITY})")
+        print(f"  federation  : {fed_remote}")
+        print(f"  sync.remote : {sync_remote}")
+        print(f"  dolt origin : {sync_remote}")
+        print("  then        : bd config apply && bd dolt push")
+        print("  .gitignore  : ensure '.beads/*' + '!.beads/config.yaml'")
+        return 0
+
+    # 1. Initialize beads in shared-server mode.
+    rc = run([
+        "bd", "init", "--shared-server", "--skip-agents", "--skip-hooks",
+        "--database", db, *passthrough,
+    ])
+    if rc != 0:
+        return rc
+
+    # 2. Provision the DoltHub repo (idempotent on "already exists").
+    status, payload = dolthub_api(
+        "POST", "database", token,
+        {"ownerName": owner, "repoName": db, "visibility": VISIBILITY, "description": ""},
+    )
+    if api_ok(status, payload):
+        print(f"bdi: created DoltHub repo {owner}/{db}")
+    elif "already exists" in str(payload.get("message") or "").lower():
+        print(f"bdi: DoltHub repo {owner}/{db} already exists, reusing")
+    else:
+        print(f"bdi: DoltHub repo creation failed ({api_error(status, payload)})", file=sys.stderr)
+        return 1
+
+    # 3. Wire the three federation keys into config.yaml (bd's source of truth),
+    #    matching every other repo.
+    apply_config_keys(root_path / ".beads" / "config.yaml", {
+        "federation.remote": f'"{fed_remote}"',
+        "sync.remote": f'"{sync_remote}"',
+        "export.git-add": "false",
+    })
+
+    # 4. Reconcile hooks/server/remote from config (idempotent). This may write
+    #    origin as dolthub://; step 5 overrides it with the pushable https URL.
+    rc = run(["bd", "config", "apply"])
+    if rc != 0:
+        return rc
+
+    # 5. Point the Dolt origin at the resolvable https remote, then push.
+    if not set_dolt_origin(db, sync_remote):
+        return 1
+    rc = run(["bd", "dolt", "push"])
+    if rc != 0:
+        return rc
+
+    # 6. Keep .beads/config.yaml tracked so the remote travels to clones.
+    ensure_gitignore(root_path)
+
+    print(f"bdi: federation wired → {fed_remote}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
