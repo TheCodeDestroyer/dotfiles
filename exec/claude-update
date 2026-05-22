@@ -1,32 +1,131 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
+"""claude-update - Update Claude Code marketplaces, plugins, and skills.
 
-# claude-update - Update Claude Code plugins and marketplaces
+A marketplace refresh only advances the marketplace clone + catalog; it does NOT
+re-pin installed plugins. Plugin versions are pinned in installed_plugins.json
+and stay frozen until `claude plugin update <plugin>` rewrites them, so a
+marketplace-only updater silently leaves plugins on stale versions.
 
-echo
-echo "================================================================"
-echo "================ UPDATING CLAUDE CODE =========================="
-echo "================================================================"
-echo
+This script: refreshes marketplaces, then updates every installed plugin at its
+own scope, for each config home, and prints a per-home drift table
+(old -> new). Plugin updates need a Claude Code restart to take effect, so the
+table reflects what will be active after restart.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
 
-if ! command -v claude &>/dev/null; then
-    echo "Claude Code CLI not found, skipping"
-    exit 0
-fi
 
-IFS=',' read -ra config_roots <<< "${CLAUDE_CONFIG_ROOTS:-$HOME/.claude}"
-for root in "${config_roots[@]}"; do
-    echo "Updating marketplaces and plugins for ${root}..."
-    CLAUDE_CONFIG_DIR="$root" claude plugin marketplace update 2>/dev/null && echo "  Done"
-done
+def sh(cmd, root=None, timeout=600):
+    """Run a command; return (returncode, stdout, stderr)."""
+    env = dict(os.environ)
+    if root:
+        env["CLAUDE_CONFIG_DIR"] = root
+    try:
+        p = subprocess.run(
+            cmd, env=env, capture_output=True, text=True, timeout=timeout
+        )
+        return p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {timeout}s"
 
-echo
-echo "Updating skills..."
-npx --yes skills update -g 2>/dev/null && echo "Skills updated"
 
-echo
-echo "Updating plannotator..."
-if command -v plannotator-update &>/dev/null; then
-    plannotator-update
-else
-    echo "plannotator-update not found, skipping"
-fi
+def config_roots():
+    raw = os.environ.get("CLAUDE_CONFIG_ROOTS") or os.path.expanduser("~/.claude")
+    return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+def list_plugins(root):
+    """Return {id: {"version": str, "scope": str}} for installed plugins."""
+    rc, out, _ = sh(["claude", "plugin", "list", "--json"], root=root, timeout=120)
+    if rc != 0 or not out.strip():
+        return {}
+    try:
+        items = json.loads(out)
+    except json.JSONDecodeError:
+        return {}
+    return {
+        p["id"]: {"version": p.get("version", "?"), "scope": p.get("scope", "user")}
+        for p in items
+        if isinstance(p, dict) and "id" in p
+    }
+
+
+def update_root(root):
+    print(f"\n=== {root} ===")
+    if not os.path.isdir(root):
+        print("  (no such config home, skipping)")
+        return
+
+    print("  Refreshing marketplaces...")
+    rc, _, err = sh(["claude", "plugin", "marketplace", "update"], root=root)
+    print("    done" if rc == 0 else f"    failed: {err.strip() or rc}")
+
+    before = list_plugins(root)
+    if not before:
+        print("  No installed plugins found.")
+        return
+
+    print(f"  Updating {len(before)} plugins...")
+    failures = {}
+    for pid, info in sorted(before.items()):
+        rc, _, err = sh(
+            ["claude", "plugin", "update", pid, "--scope", info["scope"]],
+            root=root,
+            timeout=300,
+        )
+        if rc != 0:
+            failures[pid] = err.strip() or f"rc={rc}"
+
+    after = list_plugins(root)
+
+    changed = [
+        (pid, before[pid]["version"], after.get(pid, {}).get("version", "?"),
+         before[pid]["scope"])
+        for pid in sorted(before)
+        if before[pid]["version"] != after.get(pid, {}).get("version", before[pid]["version"])
+    ]
+
+    if changed:
+        width = max(len(c[0]) for c in changed)
+        print("  Version changes (apply on restart):")
+        for pid, old, new, scope in changed:
+            print(f"    {pid:<{width}}  {old} -> {new}  ({scope})")
+    else:
+        print("  All plugins already at latest pinned version.")
+
+    if failures:
+        print("  Update failures:")
+        for pid, msg in sorted(failures.items()):
+            print(f"    {pid}: {msg}")
+
+
+def main():
+    print("=" * 64)
+    print("UPDATING CLAUDE CODE")
+    print("=" * 64)
+
+    if not shutil.which("claude"):
+        print("Claude Code CLI not found, skipping plugin updates")
+    else:
+        for root in config_roots():
+            update_root(root)
+
+    print("\nUpdating skills...")
+    rc, _, err = sh(["npx", "--yes", "skills", "update", "-g"], timeout=600)
+    print("  skills updated" if rc == 0 else f"  skills update failed: {err.strip() or rc}")
+
+    print("\nUpdating plannotator...")
+    if shutil.which("plannotator-update"):
+        subprocess.run(["plannotator-update"])
+    else:
+        print("  plannotator-update not found, skipping")
+
+    print("\n>>> Restart Claude Code to apply plugin updates "
+          "(versions are pinned at process start).")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
