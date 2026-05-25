@@ -7,6 +7,7 @@ Usage:
   claude-monthly-cost --all        # all time
   claude-monthly-cost --daily      # daily breakdown for current month
   claude-monthly-cost --daily 2026-03  # daily breakdown for specific month
+  claude-monthly-cost --monthly    # per-month breakdown across all time
 
 Data is cached in ~/.claude/usage-ledger.json so historical data survives
 session cleanup (default 30 days). Live sessions are only scanned when
@@ -23,9 +24,13 @@ from pathlib import Path
 # ── Pricing (per million tokens, USD) ──
 # https://docs.anthropic.com/en/docs/about-claude/pricing
 PRICING = {
+    "claude-opus-4-7": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
     "claude-opus-4-6": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+    "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
     "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30},
     "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00, "cache_write": 1.00, "cache_read": 0.08},
+    # Synthetic messages are generated locally (no API call) — zero cost.
+    "<synthetic>": {"input": 0.0, "output": 0.0, "cache_write": 0.0, "cache_read": 0.0},
 }
 
 LEDGER_VERSION = 1
@@ -33,12 +38,15 @@ LEDGER_VERSION = 1
 
 def parse_args():
     daily = False
+    monthly = False
     all_time = False
     month = None
 
     for arg in sys.argv[1:]:
         if arg == "--daily":
             daily = True
+        elif arg == "--monthly":
+            monthly = True
         elif arg == "--all":
             all_time = True
         elif arg in ("--help", "-h"):
@@ -50,10 +58,16 @@ def parse_args():
             print(f"Unknown argument: {arg}", file=sys.stderr)
             sys.exit(1)
 
+    if monthly:
+        if month:
+            print("--monthly spans all data; remove the year-month argument.", file=sys.stderr)
+            sys.exit(1)
+        all_time = True  # monthly view always spans all data
+
     if not month and not all_time:
         month = datetime.now().strftime("%Y-%m")
 
-    return daily, all_time, month
+    return daily, monthly, all_time, month
 
 
 # ── Ledger: persistent daily aggregates ──
@@ -227,14 +241,28 @@ def fmt_tokens(n):
     return str(n)
 
 
-def display(agg, daily, all_time, month):
+def display(agg, daily, all_time, month, monthly=False):
     """Filter and display aggregated data."""
     # Filter
-    if not all_time:
+    if monthly:
+        # Re-bucket daily records into months (keeping the per-model split)
+        # and render with the per-row layout (reuses the --daily path).
+        bucketed = defaultdict(lambda: {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0, "msgs": 0})
+        for (date, model), t in agg.items():
+            mkey = date[:7] if date else "unknown"
+            b = bucketed[(mkey, model)]
+            for field in ("input", "output", "cache_write", "cache_read", "msgs"):
+                b[field] += t[field]
+        agg = dict(bucketed)
+        daily = True
+    elif not all_time:
         agg = {k: v for k, v in agg.items() if k[0].startswith(month)}
 
     if not agg:
-        period = "all time" if all_time else month
+        if monthly:
+            period = "all time (monthly)"
+        else:
+            period = "all time" if all_time else month
         print(f"\nNo usage data found for {period}.")
         return
 
@@ -250,8 +278,9 @@ def display(agg, daily, all_time, month):
         rows = sorted(agg.items())
 
     # Header
+    col_label = "Month" if monthly else "Date"
     if daily:
-        hdr = f"\n{'Date':<12} {'Model':<28} {'Input':>10} {'Output':>10} {'Cache Wr':>10} {'Cache Rd':>10} {'Msgs':>6} {'Cost':>10}"
+        hdr = f"\n{col_label:<12} {'Model':<28} {'Input':>10} {'Output':>10} {'Cache Wr':>10} {'Cache Rd':>10} {'Msgs':>6} {'Cost':>10}"
     else:
         hdr = f"\n{'Model':<28} {'Input':>10} {'Output':>10} {'Cache Wr':>10} {'Cache Rd':>10} {'Msgs':>6} {'Cost':>10}"
     sep = "-" * len(hdr.strip())
@@ -263,41 +292,77 @@ def display(agg, daily, all_time, month):
     unknown_models = set()
     totals = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0, "msgs": 0}
 
-    for (date, model), t in rows:
-        cost = compute_cost(model, t)
-        cost_str = f"${cost:>8.2f}" if cost is not None else "  unknown"
-        if cost is None:
-            unknown_models.add(model)
-            cost = 0
-        total_cost += cost
-        for k in totals:
-            totals[k] += t[k]
+    def breakdown_row(c1, c2, t, cost_str):
+        return (
+            f"{c1:<12} {c2:<28} {fmt_tokens(t['input']):>10} {fmt_tokens(t['output']):>10} "
+            f"{fmt_tokens(t['cache_write']):>10} {fmt_tokens(t['cache_read']):>10} {t['msgs']:>6} {cost_str}"
+        )
 
-        if daily:
-            print(
-                f"{date:<12} {model:<28} {fmt_tokens(t['input']):>10} {fmt_tokens(t['output']):>10} "
-                f"{fmt_tokens(t['cache_write']):>10} {fmt_tokens(t['cache_read']):>10} {t['msgs']:>6} {cost_str}"
-            )
-        else:
+    if daily:
+        # Group rows by date/month; close each group with a subtotal + splitter.
+        cur_key = None
+        grp = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0, "msgs": 0}
+        grp_cost = 0.0
+        grp_rows = 0
+
+        def flush_group():
+            nonlocal grp, grp_cost, grp_rows
+            if grp_rows > 1:
+                print(breakdown_row("", "(subtotal)", grp, f"${grp_cost:>8.2f}"))
+            print(sep)
+            grp = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0, "msgs": 0}
+            grp_cost = 0.0
+            grp_rows = 0
+
+        for (date, model), t in rows:
+            cost = compute_cost(model, t)
+            if model in PRICING and PRICING[model]["input"] == 0:
+                continue  # zero-priced pseudo-models (e.g. <synthetic>) — hide
+            cost_str = f"${cost:>8.2f}" if cost is not None else "  unknown"
+            if cost is None:
+                unknown_models.add(model)
+                cost = 0
+            if cur_key is not None and date != cur_key:
+                flush_group()
+            cur_key = date
+            total_cost += cost
+            grp_cost += cost
+            grp_rows += 1
+            for k in totals:
+                totals[k] += t[k]
+                grp[k] += t[k]
+            print(breakdown_row(date, model, t, cost_str))
+        if cur_key is not None:
+            flush_group()
+
+        print(breakdown_row("TOTAL", "", totals, f"${total_cost:>8.2f}"))
+    else:
+        for (date, model), t in rows:
+            cost = compute_cost(model, t)
+            if model in PRICING and PRICING[model]["input"] == 0:
+                continue  # zero-priced pseudo-models (e.g. <synthetic>) — hide
+            cost_str = f"${cost:>8.2f}" if cost is not None else "  unknown"
+            if cost is None:
+                unknown_models.add(model)
+                cost = 0
+            total_cost += cost
+            for k in totals:
+                totals[k] += t[k]
             print(
                 f"{model:<28} {fmt_tokens(t['input']):>10} {fmt_tokens(t['output']):>10} "
                 f"{fmt_tokens(t['cache_write']):>10} {fmt_tokens(t['cache_read']):>10} {t['msgs']:>6} {cost_str}"
             )
 
-    print(sep)
-    label = "TOTAL"
-    if daily:
+        print(sep)
         print(
-            f"{label:<41} {fmt_tokens(totals['input']):>10} {fmt_tokens(totals['output']):>10} "
-            f"{fmt_tokens(totals['cache_write']):>10} {fmt_tokens(totals['cache_read']):>10} {totals['msgs']:>6} ${total_cost:>8.2f}"
-        )
-    else:
-        print(
-            f"{label:<28} {fmt_tokens(totals['input']):>10} {fmt_tokens(totals['output']):>10} "
+            f"{'TOTAL':<28} {fmt_tokens(totals['input']):>10} {fmt_tokens(totals['output']):>10} "
             f"{fmt_tokens(totals['cache_write']):>10} {fmt_tokens(totals['cache_read']):>10} {totals['msgs']:>6} ${total_cost:>8.2f}"
         )
 
-    period = "All-time" if all_time else month
+    if monthly:
+        period = "All-time (monthly)"
+    else:
+        period = "All-time" if all_time else month
     print(f"\n  {period} estimated cost: ${total_cost:.2f}")
     print("  (Based on API pricing — actual subscription cost may differ)")
     if unknown_models:
@@ -308,7 +373,7 @@ def display(agg, daily, all_time, month):
 # ── Main ──
 
 def main():
-    daily, all_time, month = parse_args()
+    daily, monthly, all_time, month = parse_args()
 
     claude_dir = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
     projects_dir = claude_dir / "projects"
@@ -343,7 +408,7 @@ def main():
     else:
         print("Using cached ledger (no live scan needed).", file=sys.stderr)
 
-    display(ledger, daily, all_time, month)
+    display(ledger, daily, all_time, month, monthly)
 
 
 if __name__ == "__main__":
