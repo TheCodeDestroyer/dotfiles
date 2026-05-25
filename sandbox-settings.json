@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": ["Bash(git:*)", "Bash(gh:*)"]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+    "failIfUnavailable": true,
+    "enableWeakerNetworkIsolation": true,
+    "excludedCommands": ["git *", "gh *"],
+    "network": {
+      "allowedDomains": ["*.github.com", "pypi.org", "*.pythonhosted.org", "*.npmjs.org", "*.dolthub.com"],
+      "allowLocalBinding": true,
+      "allowMachLookup": ["com.apple.SecurityServer", "2BUA8C4S2C.com.1password.*"]
+    },
+    "filesystem": {
+      "allowRead": ["~/.config/mise/age.txt"],
+      "allowWrite": [".", "~/.beads", "~/.dolt", "~/.cache", "~/.npm", "~/Library/Caches", "~/Library/Application Support/rtk", "~/.claude/plugins/data", "~/.claude/gideon", "~/Work/**/.git/**/*"],
+      "denyWrite": ["~/Work/**/.git/hooks/**/*", "~/Work/**/.git/config"],
+      "denyRead": ["~/.ssh", "~/.aws"]
+    }
+  }
+}

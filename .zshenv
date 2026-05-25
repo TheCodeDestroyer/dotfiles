@@ -86,3 +86,7 @@ alias pmy="pm why"
 # GIT
 alias gcstg="git checkout staging"
 
+# CLAUDE CODE
+alias cc-fleet='claude agents --permission-mode acceptEdits'
+alias cc-sandbox='claude --settings $HOME/bin/sandbox-settings.json --permission-mode acceptEdits'
+alias cc-dispatch='claude --permission-mode acceptEdits --background'
