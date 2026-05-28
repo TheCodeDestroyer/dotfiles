@@ -114,8 +114,15 @@ def main():
             update_root(root)
 
     print("\nUpdating skills...")
-    rc, _, err = sh(["npx", "--yes", "skills", "update", "-g"], timeout=600)
-    print("  skills updated" if rc == 0 else f"  skills update failed: {err.strip() or rc}")
+    try:
+        rc = subprocess.run(
+            ["npx", "--yes", "skills", "update", "-g"],
+            stdin=subprocess.DEVNULL,
+            timeout=600,
+        ).returncode
+        print("  skills updated" if rc == 0 else f"  skills update failed: rc={rc}")
+    except subprocess.TimeoutExpired:
+        print("  skills update timed out after 600s")
 
     print("\nUpdating plannotator...")
     if shutil.which("plannotator-update"):
