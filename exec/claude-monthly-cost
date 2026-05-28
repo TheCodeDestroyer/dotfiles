@@ -243,6 +243,10 @@ def fmt_tokens(n):
 
 def display(agg, daily, all_time, month, monthly=False):
     """Filter and display aggregated data."""
+    # Drop zero-priced pseudo-models (e.g. <synthetic>) up-front so they don't
+    # contribute to bucketing, the empty-data check, totals, or subtotals.
+    agg = {k: v for k, v in agg.items() if not (k[1] in PRICING and PRICING[k[1]]["input"] == 0)}
+
     # Filter
     if monthly:
         # Re-bucket daily records into months (keeping the per-model split)
@@ -316,8 +320,6 @@ def display(agg, daily, all_time, month, monthly=False):
 
         for (date, model), t in rows:
             cost = compute_cost(model, t)
-            if model in PRICING and PRICING[model]["input"] == 0:
-                continue  # zero-priced pseudo-models (e.g. <synthetic>) — hide
             cost_str = f"${cost:>8.2f}" if cost is not None else "  unknown"
             if cost is None:
                 unknown_models.add(model)
@@ -339,8 +341,6 @@ def display(agg, daily, all_time, month, monthly=False):
     else:
         for (date, model), t in rows:
             cost = compute_cost(model, t)
-            if model in PRICING and PRICING[model]["input"] == 0:
-                continue  # zero-priced pseudo-models (e.g. <synthetic>) — hide
             cost_str = f"${cost:>8.2f}" if cost is not None else "  unknown"
             if cost is None:
                 unknown_models.add(model)
