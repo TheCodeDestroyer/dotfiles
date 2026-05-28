@@ -6,7 +6,9 @@ bdi - Streamlined `bd init` for the shared-server + DoltHub-federation model.
 One shot to fully wire beads federation for a fresh repo:
   1. bd init --shared-server --skip-agents --skip-hooks --database <db>
      (replaces the deprecated --stealth; we manage .gitignore ourselves so
-     .beads/config.yaml stays git-tracked and the remote travels to clones)
+     .beads/config.yaml stays git-tracked and the remote travels to clones).
+     Skipped automatically when .beads/metadata.json already records the
+     expected dolt_database — supports resuming an interrupted bdi run.
   2. provision the per-project DoltHub repo via the API (idempotent: an
      existing repo is reused)
   3. set federation.remote + sync.remote, `bd config apply`, point the Dolt
@@ -142,6 +144,23 @@ def run(cmd: list[str]) -> int:
     return r.returncode
 
 
+def bd_init_already_done(root: Path, db: str) -> bool:
+    """Detect whether `bd init` has already produced state matching `db`.
+
+    `.beads/metadata.json` is bd's source of truth for the project's
+    shared-server database name; if it matches the name we'd pass to bd init,
+    re-running bd init is a no-op at best and an error at worst. Treat any
+    parse/read failure as "not initialized" so we fall through to bd init.
+    """
+    meta = root / ".beads" / "metadata.json"
+    if not meta.exists():
+        return False
+    try:
+        return json.loads(meta.read_text()).get("dolt_database") == db
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
 def dolt_db_dir(db: str) -> Path | None:
     """Locate the shared-server Dolt working dir for a database."""
     default = Path.home() / ".beads" / "shared-server" / "dolt" / db
@@ -237,10 +256,17 @@ def main(argv: list[str] | None = None) -> int:
     fed_remote = f"dolthub://{owner}/{db}"
     sync_remote = f"https://doltremoteapi.dolthub.com/{owner}/{db}"
 
+    resuming = bd_init_already_done(root_path, db)
+
     if args.dry_run:
         extra = (" " + " ".join(passthrough)) if passthrough else ""
+        init_line = (
+            f"skipped (resume: .beads/metadata.json already records dolt_database={db})"
+            if resuming
+            else f"--shared-server --skip-agents --skip-hooks --database {db}{extra}"
+        )
         print("bdi: dry-run — no changes will be made")
-        print(f"  bd init     : --shared-server --skip-agents --skip-hooks --database {db}{extra}")
+        print(f"  bd init     : {init_line}")
         print(f"  DoltHub repo: POST /database → {owner}/{db} (visibility={VISIBILITY})")
         print(f"  federation  : {fed_remote}")
         print(f"  sync.remote : {sync_remote}")
@@ -249,13 +275,18 @@ def main(argv: list[str] | None = None) -> int:
         print("  .gitignore  : ensure '.beads/*' + '!.beads/config.yaml'")
         return 0
 
-    # 1. Initialize beads in shared-server mode.
-    rc = run([
-        "bd", "init", "--shared-server", "--skip-agents", "--skip-hooks",
-        "--database", db, *passthrough,
-    ])
-    if rc != 0:
-        return rc
+    # 1. Initialize beads in shared-server mode (skip when resuming a partial
+    #    run: metadata.json already pins us to this db, and re-running bd init
+    #    on an initialized .beads/ would either no-op or error).
+    if resuming:
+        print(f"bdi: resuming — bd init already complete for {db}, wiring federation")
+    else:
+        rc = run([
+            "bd", "init", "--shared-server", "--skip-agents", "--skip-hooks",
+            "--database", db, *passthrough,
+        ])
+        if rc != 0:
+            return rc
 
     # 2. Provision the DoltHub repo (idempotent on "already exists").
     status, payload = dolthub_api(
