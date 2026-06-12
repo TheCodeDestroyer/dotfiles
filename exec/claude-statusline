@@ -16,6 +16,7 @@ BRIGHT_GREEN="\033[92m"
 BRIGHT_YELLOW="\033[93m"
 MAGENTA="\033[35m"
 BRIGHT_MAGENTA="\033[95m"
+LIGHT_GRAY="\033[38;5;250m"
 
 SEP="${DIM} | ${RESET}"
 
@@ -45,6 +46,7 @@ add() {
 # ── Parse stdin JSON ──
 {
   read -r model
+  read -r effort
   read -r used_pct
   read -r total_input
   read -r ctx_size
@@ -54,6 +56,7 @@ add() {
 } < <(
   jq -r '
     ((.model.display_name // "Claude") | sub(" \\(.*$"; "")),
+    (.effort.level // ""),
     (.context_window.used_percentage // ""),
     (((.context_window.current_usage.input_tokens // 0) + (.context_window.current_usage.cache_creation_input_tokens // 0) + (.context_window.current_usage.cache_read_input_tokens // 0)) | floor),
     ((.context_window.context_window_size // 0) | floor),
@@ -82,6 +85,7 @@ format_tokens() {
 
 # Model
 model_seg="${BOLD}${CYAN}${model}${RESET}"
+[ -n "$effort" ] && model_seg+=" ${LIGHT_GRAY}[${effort}]${RESET}"
 if [ -n "$session_id" ]; then
   marker="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gideon/markers/${session_id}.jsonl"
   [ -f "$marker" ] && model_seg+=" 💎"
