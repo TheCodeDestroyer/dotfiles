@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""claude-monthly-cost — Aggregate Claude Code token usage & estimated cost across all sessions.
+"""claude-cost — Aggregate Claude Code token usage & estimated cost across all sessions.
 
 Usage:
-  claude-monthly-cost              # current month
-  claude-monthly-cost 2026-03      # specific month
-  claude-monthly-cost --all        # all time
-  claude-monthly-cost --daily      # daily breakdown for current month
-  claude-monthly-cost --daily 2026-03  # daily breakdown for specific month
-  claude-monthly-cost --monthly    # per-month breakdown across all time
+  claude-cost              # current month
+  claude-cost 2026-03      # specific month
+  claude-cost --all        # all time
+  claude-cost --daily      # daily breakdown for current month
+  claude-cost --daily 2026-03  # daily breakdown for specific month
+  claude-cost --monthly    # per-month breakdown across all time
 
 Data is cached in ~/.claude/usage-ledger.json so historical data survives
 session cleanup (default 30 days). Live sessions are only scanned when
@@ -16,24 +16,160 @@ the requested period includes recent/current data.
 
 import json
 import os
+import re
 import sys
+import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
 # ── Pricing (per million tokens, USD) ──
+# Direct Anthropic API rates. Cross-checked against the LiteLLM price table
+# (github.com/BerriAI/litellm) and models.dev. NOTE: the Opus line dropped from
+# $15/$75 to $5/$25 starting with Opus 4.5 — older hardcoded values here were
+# the Opus 4/4.1-era rates and overstated cost ~3x.
 # https://docs.anthropic.com/en/docs/about-claude/pricing
 PRICING = {
-    "claude-opus-4-7": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
-    "claude-opus-4-6": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
-    "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+    # Fable/Mythos 5 share one price point (5m cache write = 1.25x base input).
+    "claude-fable-5": {"input": 10.00, "output": 50.00, "cache_write": 12.50, "cache_read": 1.00},
+    "claude-mythos-5": {"input": 10.00, "output": 50.00, "cache_write": 12.50, "cache_read": 1.00},
+    "claude-opus-4-8": {"input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50},
+    "claude-opus-4-7": {"input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50},
+    "claude-opus-4-6": {"input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50},
+    "claude-opus-4-5-20251101": {"input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50},
     "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30},
-    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00, "cache_write": 1.00, "cache_read": 0.08},
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00, "cache_write": 1.25, "cache_read": 0.10},
     # Synthetic messages are generated locally (no API call) — zero cost.
     "<synthetic>": {"input": 0.0, "output": 0.0, "cache_write": 0.0, "cache_read": 0.0},
 }
 
 LEDGER_VERSION = 1
+
+# ── Live pricing: cached fetch from the LiteLLM price table, static fallback ──
+# Anthropic publishes no machine-readable price API, so we use the community
+# LiteLLM table (verified against platform.claude.com/docs/.../pricing). Fetched
+# weekly into pricing-cache.json; any network/parse failure falls back to the
+# static PRICING table above. Fetched entries take precedence so new model IDs
+# get priced without code edits.
+LITELLM_PRICE_URL = (
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/"
+    "model_prices_and_context_window.json"
+)
+PRICING_CACHE_VERSION = 1
+PRICING_CACHE_MAX_AGE_DAYS = 7
+# Regional/multi-region endpoints carry a 10% premium over the global Claude API
+# rate, so we prefer the bare (global) entry when both exist.
+_REGION_PREFIXES = ("us.", "eu.", "au.", "jp.", "apac.", "global.")
+_PROVIDER_PREFIXES = ("anthropic.", "bedrock/", "vertex_ai/", "vertex_ai-anthropic_models/")
+
+
+def _normalize_model_key(key):
+    """Strip provider/region prefixes and Bedrock version suffixes to a bare id,
+    e.g. 'us.anthropic.claude-opus-4-8-v1:0' -> 'claude-opus-4-8'."""
+    k = key.lower()
+    changed = True
+    while changed:
+        changed = False
+        for p in _REGION_PREFIXES + _PROVIDER_PREFIXES:
+            if k.startswith(p):
+                k = k[len(p):]
+                changed = True
+    # Drop a trailing Bedrock version suffix: -vN:N, -vN, or :N (any version).
+    return re.sub(r"(-v\d+)?:\d+$|-v\d+$", "", k)
+
+
+def parse_litellm_table(data):
+    """Convert the LiteLLM JSON into {normalized_model: per-million price dict}.
+    Prefers global (non-regional) source keys over their 10%-premium regional twins."""
+    prices = {}
+    from_direct = {}  # normalized id -> was the source key global (preferred)?
+    for key, val in data.items():
+        if not isinstance(val, dict) or "claude" not in key.lower():
+            continue
+        inp = val.get("input_cost_per_token")
+        out = val.get("output_cost_per_token")
+        if inp is None or out is None:
+            continue
+        norm = _normalize_model_key(key)
+        is_global = not key.lower().startswith(_REGION_PREFIXES)
+        if norm in prices and from_direct.get(norm) and not is_global:
+            continue  # keep the global entry already stored
+        prices[norm] = {
+            "input": inp * 1_000_000,
+            "output": out * 1_000_000,
+            "cache_write": (val.get("cache_creation_input_token_cost") or 0.0) * 1_000_000,
+            "cache_read": (val.get("cache_read_input_token_cost") or 0.0) * 1_000_000,
+        }
+        from_direct[norm] = is_global
+    return prices
+
+
+def load_pricing(claude_dir):
+    """Return fetched {normalized_model: price} from cache or a fresh LiteLLM
+    pull. Empty dict on any failure (callers fall back to static PRICING)."""
+    cache = claude_dir / "pricing-cache.json"
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    if cache.exists():
+        try:
+            cdata = json.loads(cache.read_text())
+            if cdata.get("version") == PRICING_CACHE_VERSION:
+                fetched_date = cdata.get("fetched_date", "")
+                try:
+                    age = (datetime.strptime(today, "%Y-%m-%d")
+                           - datetime.strptime(fetched_date, "%Y-%m-%d")).days
+                except ValueError:
+                    age = None
+                if age is not None and 0 <= age < PRICING_CACHE_MAX_AGE_DAYS:
+                    return cdata.get("prices", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    try:
+        req = urllib.request.Request(LITELLM_PRICE_URL, headers={"User-Agent": "claude-cost"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.load(resp)
+        prices = parse_litellm_table(data)
+        if not prices:
+            raise ValueError("no Claude models in table")
+        try:
+            tmp = cache.with_suffix(".tmp")
+            tmp.write_text(json.dumps(
+                {"version": PRICING_CACHE_VERSION, "fetched_date": today, "prices": prices},
+                indent=2,
+            ))
+            tmp.rename(cache)
+        except OSError:
+            pass
+        print(f"  Pricing refreshed from LiteLLM ({len(prices)} models).", file=sys.stderr)
+        return prices
+    except Exception as e:  # network, parse, anything — fall back to static table
+        print(f"  Note: live pricing unavailable ({e}); using built-in table.", file=sys.stderr)
+        return {}
+
+
+def resolve_price(model, fetched):
+    """Find a price for a session model id, trying fetched data then the static
+    PRICING table, with [1m]-suffix and trailing-date fallbacks."""
+    candidates = [model]
+    if "[" in model:
+        candidates.append(model.split("[", 1)[0])
+    for c in list(candidates):
+        m = re.match(r"^(.*)-\d{8}$", c)  # strip a trailing -YYYYMMDD date variant
+        if m:
+            candidates.append(m.group(1))
+
+    for c in candidates:
+        nc = _normalize_model_key(c)
+        if nc in fetched:
+            return fetched[nc]
+    for c in candidates:
+        if c in PRICING:
+            return PRICING[c]
+        nc = _normalize_model_key(c)
+        if nc in PRICING:
+            return PRICING[nc]
+    return None
 
 
 def parse_args():
@@ -219,8 +355,8 @@ def scan_live_sessions(projects_dir):
 
 # ── Display ──
 
-def compute_cost(model, tokens):
-    p = PRICING.get(model)
+def compute_cost(model, tokens, pricing=None):
+    p = resolve_price(model, pricing or {})
     if p is None:
         return None
     return (
@@ -241,11 +377,15 @@ def fmt_tokens(n):
     return str(n)
 
 
-def display(agg, daily, all_time, month, monthly=False):
+def display(agg, daily, all_time, month, monthly=False, pricing=None):
     """Filter and display aggregated data."""
+    pricing = pricing or {}
     # Drop zero-priced pseudo-models (e.g. <synthetic>) up-front so they don't
     # contribute to bucketing, the empty-data check, totals, or subtotals.
-    agg = {k: v for k, v in agg.items() if not (k[1] in PRICING and PRICING[k[1]]["input"] == 0)}
+    def _is_zero_priced(model):
+        p = resolve_price(model, pricing)
+        return p is not None and p["input"] == 0
+    agg = {k: v for k, v in agg.items() if not _is_zero_priced(k[1])}
 
     # Filter
     if monthly:
@@ -319,7 +459,7 @@ def display(agg, daily, all_time, month, monthly=False):
             grp_rows = 0
 
         for (date, model), t in rows:
-            cost = compute_cost(model, t)
+            cost = compute_cost(model, t, pricing)
             cost_str = f"${cost:>8.2f}" if cost is not None else "  unknown"
             if cost is None:
                 unknown_models.add(model)
@@ -340,7 +480,7 @@ def display(agg, daily, all_time, month, monthly=False):
         print(breakdown_row("TOTAL", "", totals, f"${total_cost:>8.2f}"))
     else:
         for (date, model), t in rows:
-            cost = compute_cost(model, t)
+            cost = compute_cost(model, t, pricing)
             cost_str = f"${cost:>8.2f}" if cost is not None else "  unknown"
             if cost is None:
                 unknown_models.add(model)
@@ -408,7 +548,8 @@ def main():
     else:
         print("Using cached ledger (no live scan needed).", file=sys.stderr)
 
-    display(ledger, daily, all_time, month, monthly)
+    pricing = load_pricing(claude_dir)
+    display(ledger, daily, all_time, month, monthly, pricing)
 
 
 if __name__ == "__main__":
