@@ -109,6 +109,11 @@ def ensure_gitignore(root: Path) -> None:
 # Central mode (default)                                                       #
 # --------------------------------------------------------------------------- #
 
+def _env_truthy(v: str) -> bool:
+    """Interpret a BEADS_DOLT_SERVER_TLS-style string as a bool."""
+    return v not in ("", "0", "false", "False")
+
+
 def load_central_config() -> dict:
     """Resolve central server connection: defaults <- central.conf <- env."""
     cfg = {"HOST": "127.0.0.1", "PORT": "3310", "USER": "root",
@@ -129,7 +134,7 @@ def load_central_config() -> dict:
             if k in key_map:
                 cfg[key_map[k]] = v
             elif k == "BEADS_DOLT_SERVER_TLS":
-                cfg["TLS"] = v not in ("", "0", "false", "False")
+                cfg["TLS"] = _env_truthy(v)
     else:
         print(f"bdi: {path} not found — using defaults "
               f"({cfg['HOST']}:{cfg['PORT']})", file=sys.stderr)
@@ -138,23 +143,31 @@ def load_central_config() -> dict:
         if env_key in os.environ:
             cfg[cfg_key] = os.environ[env_key]
     if "BEADS_DOLT_SERVER_TLS" in os.environ:
-        cfg["TLS"] = os.environ["BEADS_DOLT_SERVER_TLS"] not in ("", "0", "false", "False")
+        cfg["TLS"] = _env_truthy(os.environ["BEADS_DOLT_SERVER_TLS"])
     return cfg
+
+
+def central_pairs(cfg: dict) -> list[tuple[str, str]]:
+    """The central connection rendered as ordered env key/value pairs.
+
+    Single source of truth for both the subprocess env (central_env) and the
+    per-repo .beads/.env file (write_env_file) — add a routing key here once.
+    """
+    pairs = [
+        ("BEADS_DOLT_SERVER_HOST", cfg["HOST"]),
+        ("BEADS_DOLT_SERVER_PORT", str(cfg["PORT"])),
+        ("BEADS_DOLT_SERVER_USER", cfg["USER"]),
+        ("BEADS_DOLT_PASSWORD", cfg["PASSWORD"]),
+        ("BEADS_DOLT_AUTO_START", "0"),
+    ]
+    if cfg["TLS"]:
+        pairs.append(("BEADS_DOLT_SERVER_TLS", "1"))
+    return pairs
 
 
 def central_env(cfg: dict) -> dict:
     """Process env that routes bd to the central server."""
-    env = dict(os.environ)
-    env.update({
-        "BEADS_DOLT_SERVER_HOST": cfg["HOST"],
-        "BEADS_DOLT_SERVER_PORT": str(cfg["PORT"]),
-        "BEADS_DOLT_SERVER_USER": cfg["USER"],
-        "BEADS_DOLT_PASSWORD": cfg["PASSWORD"],
-        "BEADS_DOLT_AUTO_START": "0",
-    })
-    if cfg["TLS"]:
-        env["BEADS_DOLT_SERVER_TLS"] = "1"
-    return env
+    return {**os.environ, **dict(central_pairs(cfg))}
 
 
 def dolt_server_sql(cfg: dict, query: str) -> tuple[int, str, str]:
@@ -182,12 +195,8 @@ def write_env_file(root: Path, cfg: dict) -> Path:
     body = "\n".join([
         "# Routes this repo to the central beads Dolt server (managed by bdi).",
         "# Source of truth: ~/.config/beads/central.conf  (refresh: bdi --repoint)",
-        f"BEADS_DOLT_SERVER_HOST={cfg['HOST']}",
-        f"BEADS_DOLT_SERVER_PORT={cfg['PORT']}",
-        f"BEADS_DOLT_SERVER_USER={cfg['USER']}",
-        f"BEADS_DOLT_PASSWORD={cfg['PASSWORD']}",
-        "BEADS_DOLT_AUTO_START=0",
-    ] + (["BEADS_DOLT_SERVER_TLS=1"] if cfg["TLS"] else []))
+        *(f"{k}={v}" for k, v in central_pairs(cfg)),
+    ])
     env_path.write_text(body + "\n")
     os.chmod(env_path, 0o600)
     return env_path
@@ -216,14 +225,17 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
         return 0
 
     # 1. Ensure the global db and the project db exist on the server (live, no
-    #    restart). db is validated [A-Za-z0-9_]+ in main(), so it is safe to
-    #    interpolate.
-    for d in (GLOBAL_DB, db):
-        rc, _out, err = dolt_server_sql(cfg, f"CREATE DATABASE IF NOT EXISTS {d}")
-        if rc != 0:
-            print(f"bdi: could not create database {d} on {server}: {err.strip()}",
-                  file=sys.stderr)
-            return 1
+    #    restart), in one dolt invocation. db is validated [A-Za-z0-9_]+ in
+    #    main() and GLOBAL_DB is constant, so both are safe to interpolate.
+    rc, _out, err = dolt_server_sql(
+        cfg,
+        f"CREATE DATABASE IF NOT EXISTS {GLOBAL_DB}; "
+        f"CREATE DATABASE IF NOT EXISTS {db};",
+    )
+    if rc != 0:
+        print(f"bdi: could not create databases on {server}: {err.strip()}",
+              file=sys.stderr)
+        return 1
 
     env = central_env(cfg)
 
@@ -252,7 +264,7 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
     #    the auto-push attempt (central repos have no origin to push to).
     run(["bd", "dolt", "commit", "--sandbox"], env=env)
 
-    # 5. Keep config.yaml tracked; ignore db/runtime/env.
+    # 6. Keep config.yaml tracked; ignore db/runtime/env.
     ensure_gitignore(root_path)
 
     print(f"bdi: {db} ready on central server {server}")
