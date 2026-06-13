@@ -23,7 +23,7 @@ SEP="${DIM} | ${RESET}"
 # ── Layout config ──
 # Each segment has a line assignment. To rearrange, change the number.
 #   segment    line
-L_MODEL=1;    L_CONTEXT=1;  L_RATE=1
+L_MODEL=1;    L_CONTEXT=1;  L_RATE=1;  L_REPLY=1
 L_GIT=2
 L_TASK=3
 
@@ -53,6 +53,7 @@ add() {
   read -r rate_5h_pct
   read -r rate_5h_resets
   read -r session_id
+  read -r transcript_path
 } < <(
   jq -r '
     ((.model.display_name // "Claude") | sub(" \\(.*$"; "")),
@@ -62,7 +63,8 @@ add() {
     ((.context_window.context_window_size // 0) | floor),
     (.rate_limits.five_hour.used_percentage // ""),
     (.rate_limits.five_hour.resets_at // ""),
-    (.session_id // "")
+    (.session_id // ""),
+    (.transcript_path // "")
   '
 )
 
@@ -168,6 +170,20 @@ if [ -n "$rate_5h_pct" ]; then
   rate_seg+="${RESET}"
 fi
 add $L_RATE "$rate_seg"
+
+# Last reply — local clock time the model last ended a turn (stopped its loop).
+# Sourced from the transcript: most recent non-sidechain assistant entry whose
+# stop_reason ends a turn. Scans the file tail newest-first and exits on the
+# first match, so jq parses a handful of (potentially MB-sized) lines, not all.
+# jq emits an epoch (matching the file's date idiom); date -r renders it local.
+reply_seg=""
+if [ -f "$transcript_path" ]; then
+  epoch=$(tail -n 50 "$transcript_path" 2>/dev/null | tail -r \
+    | jq -r 'select(.type=="assistant" and (.isSidechain != true) and (.message.stop_reason=="end_turn" or .message.stop_reason=="stop_sequence")) | .timestamp[0:19] + "Z" | fromdateiso8601' 2>/dev/null \
+    | head -1)
+  [ -n "$epoch" ] && reply_seg="${LIGHT_GRAY}↩ $(date -r "$epoch" +%H:%M)${RESET}"
+fi
+add $L_REPLY "$reply_seg"
 
 # Current task
 task_seg=""
