@@ -53,8 +53,5 @@
 # - github.org
 # - github.repo
 
-federation.remote: "dolthub://thecodedestroyer/bin"
-
-sync.remote: "https://doltremoteapi.dolthub.com/thecodedestroyer/bin"
-
 export.git-add: false
+dolt.auto-push: false
