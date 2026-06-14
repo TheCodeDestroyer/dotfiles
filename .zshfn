@@ -4,7 +4,7 @@ function mise-clean {
   command mise-clean
 }
 
-function update-system {
+function system-update {
   local OS_TYPE=$(uname -s)
 
   if [[ "${OS_TYPE}" == "Darwin" ]]; then
