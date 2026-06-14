@@ -8,7 +8,7 @@ function update-system {
   local OS_TYPE=$(uname -s)
 
   if [[ "${OS_TYPE}" == "Darwin" ]]; then
-      brew update && brew upgrade;
+      brew update && HOMEBREW_NO_ASK=1 brew upgrade;
 
       sheldon lock --update;
   elif [[ "${OS_TYPE}" == "Linux" ]]; then
