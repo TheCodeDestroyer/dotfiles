@@ -35,3 +35,6 @@ esac
 #COMPLETION OPTION STACKING
 zstyle ':completion:*:*:docker:*' option-stacking yes
 zstyle ':completion:*:*:docker-*:*' option-stacking yes
+
+# agent-browser: auto-close idle browser after 1h to prevent runaway Chrome processes
+export AGENT_BROWSER_IDLE_TIMEOUT_MS=3600000
