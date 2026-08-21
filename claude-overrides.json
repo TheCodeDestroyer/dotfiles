@@ -1,0 +1,8 @@
+{
+  "skills": {},
+  "settings": {
+    "skillOverrides": {
+      "build-dark-factory": "user-invocable-only"
+    }
+  }
+}

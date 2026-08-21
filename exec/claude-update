@@ -10,7 +10,16 @@ This script: refreshes marketplaces, then updates every installed plugin at its
 own scope, for each config home, and prints a per-home drift table
 (old -> new). Plugin updates need a Claude Code restart to take effect, so the
 table reflects what will be active after restart.
+
+It then applies claude-overrides.json: the `skills` section re-patches SKILL.md
+frontmatter, which `skills update` overwrites with upstream whenever upstream
+moves that skill, and the `settings` section merges keys into each config
+home's settings.json (lists union, null deletes, machine-local keys survive).
+`--overrides-only` runs those two steps alone; `--dry-run` previews both
+without writing.
 """
+import argparse
+import fnmatch
 import json
 import os
 import shutil
@@ -102,7 +111,319 @@ def update_root(root):
             print(f"    {pid}: {msg}")
 
 
+# --- Claude Code overrides --------------------------------------------------
+# claude-overrides.json is this repo's desired-state file for Claude Code:
+# the config that should follow the dotfiles to any machine. It is split
+# into sections by TARGET, because each target is patched differently.
+#
+#   skills   -> SKILL.md frontmatter in AGENT_SKILLS_DIR
+#   settings -> keys merged into each config root's settings.json:
+#               permissions, model, worktree, statusLine, enabledPlugins,
+#               extraKnownMarketplaces, skillOverrides, ...
+#
+# Invocation policy belongs in the settings section as `skillOverrides`, NOT in
+# the skills section: it reaches the same outcome without patching the upstream
+# SKILL.md, and the settings section makes it version-controlled here anyway.
+# The skills section is only for frontmatter settings.json cannot express --
+# description, model, allowed-tools.
+#
+# The two targets are NOT the same problem. Skill frontmatter needs
+# re-applying because `skills update` overwrites the file; settings.json is
+# never rewritten by an update, so a settings section would exist purely to
+# version the config and seed a fresh machine, and would have to MERGE (not
+# replace) so machine-local keys survive.
+#
+# -- skills section ---------------------------------------------------------
+# `skills update` re-fetches SKILL.md from upstream, so any local frontmatter
+# edit (disable-model-invocation, a sharper description, allowed-tools) is
+# clobbered whenever upstream moves that skill. The override config re-applies
+# them afterwards. The npm skills live once in AGENT_SKILLS_DIR and are
+# symlinked into each Claude config home, so patching the file there covers
+# every home.
+#
+# Claude Code has a native lever for invocation policy: `skillOverrides` in
+# ~/.claude/settings.json, which `/skills` writes for you (Space cycles
+# on|name-only|user-invocable-only|off, Enter saves). It is never clobbered by
+# an update and leaves the upstream file pristine. We deliberately do NOT use
+# it as the source of truth, because ~/.claude/settings.json is not in this
+# repo: an override set there is unversioned and does not survive a fresh
+# machine. This config owns invocation policy instead, and the accepted cost is
+# that the upstream SKILL.md is patched and so diverges from upstream.
+# `skillOverrides` remains the better tool for a throwaway/machine-local tweak,
+# and `name-only` drops an over-broad description from the listing without
+# rewriting it. Neither lever reaches plugin skills -- the resolver returns
+# "on" for anything whose source is a plugin (verified against Claude Code
+# 2.1.237); manage those via /plugin.
+#
+# skills section format: {name-or-glob: {key: value}}; empty or absent is fine
+# (prints "no skills section, skipping"). Note CLAUDE_CODE_MANAGED_SETTINGS_PATH is NOT a usable
+# alternative: it is undocumented and, as of 2.1.237, a deny rule supplied
+# through it is not enforced as either a file or a directory path, and a
+# malformed file raises no error at all.
+
+SKILLS_DIR = os.environ.get("AGENT_SKILLS_DIR") or os.path.expanduser(
+    "~/.agents/skills"
+)
+OVERRIDES_FILE = os.environ.get("CLAUDE_OVERRIDES") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+    "claude-overrides.json",
+)
+_YAML_RESERVED = {"true", "false", "null", "yes", "no", "on", "off", "~"}
+
+
+def yaml_scalar(value):
+    """Render an override value as an inline YAML node, quoting when ambiguous.
+
+    JSON is a subset of YAML, so json.dumps is both the renderer and the
+    quoter: it yields `true`/`3` for scalars and flow style for a list or map.
+    Plain strings stay unquoted when unambiguous, to keep the patched line
+    readable and the diff against upstream as small as the change itself.
+    """
+    if not isinstance(value, str):
+        return json.dumps(value)
+    risky = (
+        not value
+        or value != value.strip()
+        or value[0] in "-?:,[]{}#&*!|>'\"%@`"
+        or ": " in value
+        or value.endswith(":")
+        or " #" in value
+        or value.lower() in _YAML_RESERVED
+        or any(ch < " " for ch in value)  # tabs/newlines: no plain scalar holds them
+    )
+    return json.dumps(value) if risky else value
+
+
+def resolve_overrides(cfg, names):
+    """Fold {name-or-glob: {key: value}} into {skill: {key: value}}.
+
+    Entries apply in file order and later ones win, so a glob broadcasts a
+    change across N skills and a literal name listed after it overrides that
+    one skill. A literal name is just a glob with no metacharacters, so there
+    is no separate per-skill tier to keep in sync.
+    """
+    resolved, warnings = {}, []
+    for pattern, values in cfg.items():
+        hits = fnmatch.filter(names, pattern)
+        if not hits:
+            warnings.append(f"'{pattern}' matched no installed skill")
+        for name in hits:
+            resolved.setdefault(name, {}).update(values)
+    return resolved, warnings
+
+
+def patch_frontmatter(path, values, dry_run=False):
+    """Set top-level keys in a SKILL.md frontmatter block.
+
+    Line-based on purpose: a real YAML round-trip would reflow descriptions and
+    drop comments, i.e. a far bigger diff than the change we asked for. Returns
+    (changes, error) where changes is a list of rendered lines that were (or,
+    under dry_run, would be) written.
+    """
+    with open(path) as f:
+        lines = f.read().split("\n")
+    if lines[0].strip() != "---":
+        return None, "no frontmatter"
+    close = next(
+        (i for i in range(1, len(lines)) if lines[i].strip() == "---"), None
+    )
+    if close is None:
+        return None, "unterminated frontmatter"
+
+    block = lines[1:close]
+    changes = []
+    # null means "this key should be absent" -- the revert path, since `skills
+    # update` is a no-op when upstream has not moved and so will NOT restore a
+    # file we patched. So deleting an entry is NOT a revert: the patch stays on
+    # disk while `skills update -g <name>` reports "up to date". Set the key to
+    # null, re-apply, then drop the entry. Verified 2026-08-20 (skills 1.5.21):
+    # this restores the file byte-for-byte against the upstream blob.
+    for key, value in values.items():
+        start = next(
+            (i for i, line in enumerate(block) if line.startswith(key + ":")), None
+        )
+        if start is None:
+            if value is not None:
+                block.append(f"{key}: {yaml_scalar(value)}")
+                changes.append(("+", block[-1]))
+            continue
+
+        # A wrapped or nested value continues on the following indented lines.
+        end = start + 1
+        while end < len(block) and block[end][:1] in (" ", "\t"):
+            end += 1
+
+        if value is None:
+            del block[start:end]
+            changes.append(("-", key))
+            continue
+
+        rendered = f"{key}: {yaml_scalar(value)}"
+        if block[start:end] != [rendered]:
+            block[start:end] = [rendered]
+            changes.append(("~", rendered))
+
+    if changes and not dry_run:
+        with open(path, "w") as f:
+            f.write("\n".join([lines[0]] + block + lines[close:]))
+    return changes, None
+
+
+def load_override_doc():
+    """Read the override file, or None. Warns about keys that are not sections."""
+    if not os.path.isfile(OVERRIDES_FILE):
+        print(f"  no override config at {OVERRIDES_FILE}, skipping")
+        return None
+    try:
+        with open(OVERRIDES_FILE) as f:
+            doc = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"  unreadable override config: {exc}")
+        return None
+    # A key that is not a known section is almost certainly the pre-sections
+    # flat format ({skill: {key: value}}), which would otherwise resolve to
+    # nothing at all. Say so rather than silently no-op.
+    unknown = [k for k in doc if k not in OVERRIDE_SECTIONS]
+    if unknown:
+        print(f"  warning: ignoring non-section key(s): {', '.join(sorted(unknown))}")
+        print(f"  (expected top-level sections: {', '.join(OVERRIDE_SECTIONS)})")
+    return doc
+
+
+def merge_settings(current, desired, path=""):
+    """Deep-merge desired into current, returning (merged, changes).
+
+    Mappings recurse. Lists UNION (existing order kept, new appended) so a
+    machine-local permission rule is never dropped by the shared config. null
+    deletes the key, matching the frontmatter patcher's revert convention.
+    Anything else replaces. Changes are (mark, dotted path, value) triples.
+    """
+    merged, changes = dict(current), []
+    for key, want in desired.items():
+        where = f"{path}.{key}" if path else key
+        have = merged.get(key)
+        if want is None:
+            if key in merged:
+                del merged[key]
+                changes.append(("-", where, ""))
+        elif isinstance(want, dict) and isinstance(have, dict):
+            sub, sub_changes = merge_settings(have, want, where)
+            merged[key] = sub
+            changes.extend(sub_changes)
+        elif isinstance(want, list) and isinstance(have, list):
+            added = [v for v in want if v not in have]
+            if added:
+                merged[key] = have + added
+                changes.append(("+", where, ", ".join(map(str, added))))
+        elif key not in merged:
+            merged[key] = want
+            changes.append(("+", where, json.dumps(want)))
+        elif have != want:
+            merged[key] = want
+            changes.append(("~", where, json.dumps(want)))
+    return merged, changes
+
+
+def apply_settings_overrides(desired, dry_run=False):
+    print("\nApplying settings overrides...")
+    if not desired:
+        print("  no settings section, skipping")
+        return
+
+    for root in config_roots():
+        target = os.path.join(root, "settings.json")
+        try:
+            with open(target) as f:
+                current = json.load(f)
+        except FileNotFoundError:
+            current = {}
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  {target}: unreadable, skipping ({exc})")
+            continue
+
+        merged, changes = merge_settings(current, desired)
+        for mark, where, value in changes:
+            print(f"  {mark} {where}{': ' + value if value else ''}")
+        if not changes:
+            print(f"  {target}: up to date")
+            continue
+        if dry_run:
+            print(f"  {target}: {len(changes)} change(s), NOT written (--dry-run)")
+            continue
+        tmp = target + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(merged, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp, target)
+        print(f"  {target}: {len(changes)} change(s) written")
+
+
+def apply_skill_overrides(cfg, dry_run=False):
+    print("\nApplying skill frontmatter overrides...")
+    if not cfg:
+        print("  no skills section, skipping")
+        return
+    if not os.path.isdir(SKILLS_DIR):
+        print(f"  no skills directory at {SKILLS_DIR}, skipping")
+        return
+
+    names = sorted(
+        entry
+        for entry in os.listdir(SKILLS_DIR)
+        if os.path.isfile(os.path.join(SKILLS_DIR, entry, "SKILL.md"))
+    )
+    resolved, warnings = resolve_overrides(cfg, names)
+
+    patched = 0
+    for name, values in sorted(resolved.items()):
+        changes, err = patch_frontmatter(
+            os.path.join(SKILLS_DIR, name, "SKILL.md"), values, dry_run=dry_run
+        )
+        if err:
+            print(f"  {name}: {err}")
+            continue
+        for mark, rendered in changes:
+            print(f"  {mark} {name}: {rendered}")
+        patched += bool(changes)
+
+    written = " (NOT written, --dry-run)" if dry_run and patched else ""
+    print(f"  {len(resolved)} skill(s) covered, {patched} patched{written}")
+    for warning in warnings:
+        print(f"  warning: {warning}")
+
+
+# Override sections, by target. Adding a target is a row here and nothing else:
+# the section name, the handler behind it and the "not a section" warning in
+# load_override_doc all come from this one mapping.
+OVERRIDE_SECTIONS = {
+    "skills": apply_skill_overrides,
+    "settings": apply_settings_overrides,
+}
+
+
+def apply_overrides(dry_run=False):
+    """Read claude-overrides.json once and hand each section to its target."""
+    doc = load_override_doc()
+    if doc is None:
+        return
+    for section, handler in OVERRIDE_SECTIONS.items():
+        handler(doc.get(section) or {}, dry_run=dry_run)
+
+
 def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--overrides-only", action="store_true",
+                    help="re-apply overrides only (skills + settings), skipping "
+                         "every marketplace, plugin and skill update")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="preview override changes without writing them")
+    args = ap.parse_args()
+
+    if args.overrides_only:
+        apply_overrides(args.dry_run)
+        return 0
+
     print("=" * 64)
     print("UPDATING CLAUDE CODE")
     print("=" * 64)
@@ -123,6 +444,8 @@ def main():
         print("  skills updated" if rc == 0 else f"  skills update failed: rc={rc}")
     except subprocess.TimeoutExpired:
         print("  skills update timed out after 600s")
+
+    apply_overrides(args.dry_run)
 
     print("\nUpdating plannotator...")
     if shutil.which("plannotator-update"):
