@@ -46,16 +46,14 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable, NamedTuple
 
 CENTRAL_CONF = Path.home() / ".config" / "beads" / "central.conf"
 GLOBAL_DB = "beads_global"  # bd references a global db; ensure it exists server-side
-
-# bd's dolt_mode (metadata.json) -> the bdi flag that produces it. Used to name
-# the offending profile when a repo is already initialized as the other one.
-PROFILE_FLAG = {"server": "--personal", "embedded": "--work"}
 
 
 def capture(cmd: list[str], **kw) -> str | None:
@@ -121,23 +119,7 @@ def read_metadata(root: Path) -> dict:
         return {}
 
 
-def profile_conflict(meta: dict, want_mode: str) -> str | None:
-    """Why this repo must not be re-initialized as `want_mode`, or None.
-
-    `.beads/metadata.json` records the storage mode bd initialized with. A
-    *different* mode means the repo belongs to the other profile, and silently
-    re-initializing it would move its issues to another home — refuse instead.
-    """
-    have = meta.get("dolt_mode")
-    if not have or have == want_mode:
-        return None
-    return (f"this repo is already initialized in {have} mode "
-            f"({PROFILE_FLAG.get(have, 'unknown profile')}), not {want_mode} "
-            "mode. Refusing to re-init across profiles — remove .beads/ first "
-            "if that is really what you want.")
-
-
-def bd_init(db: str, argv: list[str], env: dict, resuming: bool) -> int:
+def bd_init_or_resume(db: str, argv: list[str], env: dict, resuming: bool) -> int:
     """Run `bd init` with a profile's arguments, or announce the resume skip.
 
     `resuming` means metadata.json already names this database, so bd init is a
@@ -157,9 +139,11 @@ def print_plan(rows: list[tuple[str, str]]) -> None:
         print(f"  {label.ljust(width)} : {value}")
 
 
-def fmt_passthrough(passthrough: list[str]) -> str:
-    """Extra `bd init` args as they would appear appended to a command line."""
-    return (" " + " ".join(passthrough)) if passthrough else ""
+def init_plan_line(resuming: bool, db: str, argv: list[str], env_note: str = "") -> str:
+    """The `bd init` row of a --dry-run plan, for either profile."""
+    if resuming:
+        return f"skipped (resume: metadata.json already records dolt_database={db})"
+    return shlex.join(argv) + env_note
 
 
 def ensure_gitignore(root: Path) -> None:
@@ -291,13 +275,10 @@ def write_env_file(root: Path, cfg: dict) -> Path:
     return env_path
 
 
-def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool) -> int:
+def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool,
+                 resuming: bool) -> int:
     cfg = load_central_config()
     server = f"{cfg['HOST']}:{cfg['PORT']}"
-    meta = read_metadata(root_path)
-    if err := profile_conflict(meta, "server"):
-        return fail(err)
-    resuming = meta.get("dolt_database") == db
 
     init_argv = [
         "--server", "--external",
@@ -306,17 +287,10 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
     ]
 
     if dry_run:
-        init_line = (
-            f"skipped (resume: metadata.json already records dolt_database={db})"
-            if resuming
-            else f"--server --external --server-host {cfg['HOST']} "
-                 f"--server-port {cfg['PORT']} --database {db}"
-                 f"{fmt_passthrough(passthrough)}"
-        )
         print_plan([
             ("central", f"{server} (tls={cfg['TLS']})"),
             ("create db", f"CREATE DATABASE IF NOT EXISTS {db}  (+ {GLOBAL_DB})"),
-            ("bd init", init_line),
+            ("bd init", init_plan_line(resuming, db, init_argv)),
             ("env file", ".beads/ -> BEADS_DOLT_SERVER_HOST/PORT/USER/PASSWORD"),
             ("then", "bd dolt commit"),
             (".gitignore", "ensure '.beads/*' + '!.beads/config.yaml'"),
@@ -337,7 +311,7 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
     env = central_env(cfg)
 
     # 2. Initialize beads schema in the external database (skip when resuming).
-    rc = bd_init(db, init_argv, env, resuming)
+    rc = bd_init_or_resume(db, init_argv, env, resuming)
     if rc != 0:
         return rc
 
@@ -365,6 +339,11 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
 # Work profile — embedded Dolt, synced over the repo's own git remote          #
 # --------------------------------------------------------------------------- #
 
+# The env bd needs on top of a stripped one for an embedded init (see
+# embedded_env). Named so --dry-run can report it rather than restate it.
+EMBEDDED_OVERRIDES = {"BD_DOLT_SHARED_SERVER": "false"}
+
+
 def embedded_env() -> dict:
     """Process env for an embedded init: no central server, no shared server.
 
@@ -375,16 +354,7 @@ def embedded_env() -> dict:
     `bd init --shared-server=false` does NOT override that config value; the
     BD_ env var does, so that is what we use.
     """
-    return {**env_without("BEADS_DOLT_"), "BD_DOLT_SHARED_SERVER": "false"}
-
-
-def plain_env() -> dict:
-    """Env with every bdi-injected routing override stripped.
-
-    Used to verify what a bare `bd` call in the repo will actually resolve —
-    i.e. that the settings landed on disk, not just in our subprocess env.
-    """
-    return env_without("BEADS_DOLT_", "BD_DOLT_")
+    return {**env_without("BEADS_DOLT_"), **EMBEDDED_OVERRIDES}
 
 
 def sync_remote_url(origin: str) -> str | None:
@@ -471,16 +441,16 @@ def effective_config(root: Path, key: str) -> str | None:
     there is no value, so the sentinel has to be recognized — the exit code
     says nothing.
     """
-    out = capture(["bd", "-C", str(root), "config", "get", key], env=plain_env())
+    # Strip every bdi-injected routing override, so this reports what a bare
+    # `bd` call resolves — i.e. that the settings landed on disk, not just in
+    # our subprocess env.
+    out = capture(["bd", "-C", str(root), "config", "get", key],
+                  env=env_without("BEADS_DOLT_", "BD_DOLT_"))
     return None if out is None or out.startswith(f"{key} (not set") else out
 
 
-def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool) -> int:
-    meta = read_metadata(root_path)
-    if err := profile_conflict(meta, "embedded"):
-        return fail(err)
-    resuming = meta.get("dolt_database") == db
-
+def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool,
+                  resuming: bool) -> int:
     origin = git_out(root_path, "remote", "get-url", "origin")
     remote = sync_remote_url(origin) if origin else None
     if origin and not remote:
@@ -490,19 +460,16 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
     # Snapshot hook ownership before bd init can overwrite the evidence.
     prior_hooks, managers = hook_owner(root_path)
 
+    init_argv = ["--skip-agents", *passthrough]
+
     if dry_run:
-        init_line = (
-            f"skipped (resume: metadata.json already records embedded {db})"
-            if resuming
-            else f"--skip-agents{fmt_passthrough(passthrough)}"
-                 "  [BD_DOLT_SHARED_SERVER=false]"
-        )
+        env_note = "  [" + " ".join(f"{k}={v}" for k, v in EMBEDDED_OVERRIDES.items()) + "]"
         hooks_line = (f"keep {', '.join(managers)} (restore bd's core.hooksPath)"
                       if managers or prior_hooks else "bd hooks via core.hooksPath")
         print_plan([
             ("profile", "work (embedded Dolt in .beads/embeddeddolt/)"),
             ("database", db),
-            ("bd init", init_line),
+            ("bd init", init_plan_line(resuming, db, init_argv, env_note)),
             ("sync.remote", remote or "none (no git origin) — issues stay local"),
             ("config.yaml", "dolt.shared-server: false"),
             ("hooks", hooks_line),
@@ -515,12 +482,12 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
     # 1. Embedded init. Hooks and AGENTS.md: bd's git hooks are what carry the
     #    issue data on push/merge, so they stay; agent files do not (work repos
     #    already have their own CLAUDE.md / AGENTS.md).
-    if not resuming and remote and remote_has_beads_data(root_path):
+    if not resuming and origin and remote_has_beads_data(root_path):
         print("bdi: origin already carries beads data (refs/dolt/data) — bd "
               "init will adopt it, so the issue prefix and project id come "
               "from there, not from this directory. Delete that ref first if "
               "you meant to start clean.")
-    rc = bd_init(db, ["--skip-agents", *passthrough], env, resuming)
+    rc = bd_init_or_resume(db, init_argv, env, resuming)
     if rc != 0:
         return rc
 
@@ -589,9 +556,53 @@ def apply_config_keys(cfg: Path, keys: dict[str, str]) -> None:
     cfg.write_text("\n".join(out).rstrip("\n") + "\n")
 
 
-# bdi profile -> entry point. Adding a profile means a row here, a row in
-# PROFILE_FLAG, and one more flag in main()'s mutually exclusive group.
-PROFILES = {"personal": central_main, "work": embedded_main}
+# --------------------------------------------------------------------------- #
+# Profiles                                                                     #
+# --------------------------------------------------------------------------- #
+
+class Profile(NamedTuple):
+    """Everything that makes a profile a profile, in one place.
+
+    `mode` is what bd writes to .beads/metadata.json as dolt_mode; it is the
+    only handle on which profile a repo already belongs to, so name, mode and
+    entry point have to travel together. A row in PROFILES is the whole
+    registration: the flag, its --help line and the "pick a profile" guidance
+    all render from here.
+    """
+    name: str
+    mode: str
+    summary: str
+    entry: Callable[..., int]
+
+    @property
+    def flag(self) -> str:
+        return f"--{self.name}"
+
+
+PERSONAL = Profile("personal", "server",
+                   "central Dolt server from central.conf (mini)", central_main)
+WORK = Profile("work", "embedded",
+               "embedded Dolt, synced over the repo's git remote", embedded_main)
+PROFILES = (PERSONAL, WORK)
+BY_MODE = {p.mode: p for p in PROFILES}
+
+
+def profile_conflict(meta: dict, want: Profile) -> str | None:
+    """Why this repo must not be re-initialized as `want`, or None.
+
+    `.beads/metadata.json` records the storage mode bd initialized with. A
+    *different* mode means the repo belongs to the other profile, and silently
+    re-initializing it would move its issues to another home — refuse instead.
+    """
+    have = meta.get("dolt_mode")
+    if not have or have == want.mode:
+        return None
+    # `have` comes from bd, not from BY_MODE, so a future bd mode is possible.
+    known = BY_MODE.get(have)
+    return (f"this repo is already initialized in {have} mode "
+            f"({known.flag if known else 'unknown profile'}), not {want.mode} "
+            "mode. Refusing to re-init across profiles — remove .beads/ first "
+            "if that is really what you want.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -601,10 +612,12 @@ def main(argv: list[str] | None = None) -> int:
     # them. Not `required=True`: the generated message would replace the
     # guidance below, which names what each profile actually does.
     mode = ap.add_mutually_exclusive_group()
-    mode.add_argument("--personal", dest="profile", action="store_const", const="personal",
-                      help="Personal profile: central Dolt server from central.conf (mini)")
-    mode.add_argument("--work", dest="profile", action="store_const", const="work",
-                      help="Work profile: embedded Dolt, synced over the repo's git remote")
+    # const is the Profile record itself, so the flag, the dolt_mode it implies
+    # and the entry point behind it can never drift apart.
+    for profile in PROFILES:
+        mode.add_argument(profile.flag, dest="profile", action="store_const",
+                          const=profile,
+                          help=f"{profile.name.capitalize()} profile: {profile.summary}")
     mode.add_argument("--repoint", action="store_true",
                       help="Rewrite this repo's .beads/ env file from central.conf and exit"
                            " (--personal repos only)")
@@ -622,11 +635,13 @@ def main(argv: list[str] | None = None) -> int:
                     "expected only letters, digits, and underscores. Rename the "
                     "directory.")
 
+    meta = read_metadata(root_path)
+
     if args.repoint:
         # Only the central profile has a connection to repoint; any other
         # dolt_mode belongs to some other profile, present or future.
-        repo_mode = read_metadata(root_path).get("dolt_mode")
-        if repo_mode and repo_mode != "server":
+        repo_mode = meta.get("dolt_mode")
+        if repo_mode and repo_mode != PERSONAL.mode:
             return fail("--repoint is for --personal repos only; a work repo "
                         "has no central connection to repoint")
         cfg = load_central_config()
@@ -637,11 +652,14 @@ def main(argv: list[str] | None = None) -> int:
     # No default profile on purpose: guessing wrong sends a repo's issues to the
     # wrong home, and that is only discovered later.
     if not args.profile:
-        return fail("pick a profile — --personal (central server on the mini) "
-                    "or --work (embedded, synced over the repo's git remote)",
-                    code=2)
+        return fail("pick a profile — "
+                    + "; ".join(f"{p.flag}: {p.summary}" for p in PROFILES), code=2)
 
-    return PROFILES[args.profile](root_path, db, passthrough, args.dry_run)
+    if err := profile_conflict(meta, args.profile):
+        return fail(err)
+
+    return args.profile.entry(root_path, db, passthrough, dry_run=args.dry_run,
+                              resuming=meta.get("dolt_database") == db)
 
 
 if __name__ == "__main__":
