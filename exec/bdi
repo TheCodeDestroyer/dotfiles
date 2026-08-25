@@ -10,7 +10,8 @@ over Tailscale). Issues live off-machine, never on the repo's git remote:
      --skip-agents --skip-hooks   (lays the beads schema into that database)
   3. write .beads/ env file so every bd call in this repo routes to the central
      server (bd otherwise silently defaults to the machine-wide shared server)
-  4. bd dolt commit (commit the initial schema) + .gitignore hygiene
+  4. bd dolt commit (commit the initial schema) + .gitignore hygiene (which
+     also untracks the .beads/ runtime files `bd init` may have committed)
 
 The central connection is read from ~/.config/beads/central.conf
 (BEADS_DOLT_SERVER_HOST/PORT/USER + BEADS_DOLT_PASSWORD/TLS; env vars override).
@@ -151,24 +152,81 @@ def init_plan_line(resuming: bool, db: str, argv: list[str], env_note: str = "")
     return shlex.join(argv) + env_note
 
 
+# The .beads/ files git should carry, everything else in there being database,
+# runtime or connection state. config.yaml is the repo's beads settings;
+# metadata.json is its identity — issue prefix, project_id, database name. A
+# clone without metadata.json cannot repoint, and re-running `bd init` to
+# rebuild it risks minting a fresh project_id against the very database the old
+# one named.
+TRACKED_BEADS_FILES = ("config.yaml", "metadata.json")
+TRACKED_BEADS_LIST = ", ".join(TRACKED_BEADS_FILES)  # for user-facing messages
+
+
+def ignored_paths(root: Path, paths: list[str]) -> list[str]:
+    """Which of `paths` .gitignore would ignore were they not already tracked.
+
+    --no-index is the whole point: check-ignore consults the index by default
+    and reports nothing for a tracked path, which is precisely the case being
+    diagnosed here. Asking git rather than re-matching the patterns in python
+    honors negations bdi did not write.
+
+    check-ignore is variadic and echoes back exactly the ignored pathnames, so
+    the whole set costs one invocation. Nothing ignored — and no paths at all —
+    both exit non-zero, which capture already reads as "no answer".
+    """
+    out = git_out(root, "check-ignore", "--no-index", "--", *paths)
+    return out.splitlines() if out else []
+
+
+def untrack_ignored_beads(root: Path) -> None:
+    """Drop .beads/ files git tracks but .gitignore now ignores.
+
+    Writing the pattern is not enough. .gitignore has no effect on paths
+    already in the index, and `bd init` stages and commits the whole .beads/
+    directory before bdi ever gets to run — so the pattern lands too late to
+    mean anything. Left tracked, .beads/interactions.jsonl (an append-only,
+    per-machine interaction log) re-diffs on every bd write, forever.
+
+    Central profile only: work repos are meant to commit .beads/, so bd's
+    config and hooks travel with the clone (see embedded_main's closing note).
+
+    Staged, not committed: bdi does not make commits in this profile, and which
+    commit these deletions belong in is the user's call.
+
+    --force because plain `git rm --cached` refuses any file whose staged
+    content differs from both the worktree and HEAD — and then drops the whole
+    batch, not just that path. These files are exactly the ones being written
+    behind git's back, so that refusal is the normal case, not the exception.
+    It only rewrites the index: --cached never touches the file on disk.
+    """
+    tracked = (git_out(root, "ls-files", "--", ".beads") or "").splitlines()
+    stale = ignored_paths(root, tracked)
+    if not stale:
+        return
+    if run(["git", "-C", str(root), "rm", "--cached", "--force", "--quiet",
+            "--", *stale]) == 0:
+        print(f"bdi: untracked {', '.join(stale)} — staged, commit to apply")
+
+
 def ensure_gitignore(root: Path) -> None:
-    """Idempotently ignore .beads/ runtime while keeping config.yaml tracked."""
+    """Idempotently ignore .beads/ runtime, keeping the tracked files tracked."""
     gi = root / ".gitignore"
     lines = gi.read_text().splitlines() if gi.exists() else []
     has_ignore = ".beads/*" in lines
-    has_negate = "!.beads/config.yaml" in lines
-    if has_ignore and has_negate:
+    missing = [f"!.beads/{name}" for name in TRACKED_BEADS_FILES
+               if f"!.beads/{name}" not in lines]
+    if has_ignore and not missing:
         return
 
     additions: list[str] = []
     if not has_ignore:
         additions += [
             "",
-            "# Beads: track only config.yaml; ignore db/runtime/connection env",
+            f"# Beads: track only {TRACKED_BEADS_LIST}; "
+            "ignore db/runtime/connection env",
             ".beads/*",
         ]
-    if not has_negate:
-        additions.append("!.beads/config.yaml")
+    additions += missing
 
     # Drop the leading separator blank when the file is empty or already ends
     # in a blank line.
@@ -177,7 +235,7 @@ def ensure_gitignore(root: Path) -> None:
 
     text = "\n".join(lines + additions).rstrip("\n") + "\n"
     gi.write_text(text)
-    print(f"bdi: updated {gi} (track .beads/config.yaml)")
+    print(f"bdi: updated {gi} (track {TRACKED_BEADS_LIST})")
 
 
 # --------------------------------------------------------------------------- #
@@ -298,7 +356,9 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
             ("bd init", init_plan_line(resuming, db, init_argv)),
             ("env file", ".beads/ -> BEADS_DOLT_SERVER_HOST/PORT/USER/PASSWORD"),
             ("then", "bd dolt commit"),
-            (".gitignore", "ensure '.beads/*' + '!.beads/config.yaml'"),
+            (".gitignore", f"ensure '.beads/*' + keep {TRACKED_BEADS_LIST}"),
+            ("untrack", "git rm --cached the ignored .beads/ files bd init "
+                        "committed (staged, not committed)"),
         ])
         return 0
 
@@ -333,8 +393,11 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
     #    the auto-push attempt (central repos have no origin to push to).
     run(["bd", "dolt", "commit", "--sandbox"], env=env)
 
-    # 6. Keep config.yaml tracked; ignore db/runtime/env.
+    # 6. Keep config.yaml and metadata.json tracked; ignore db/runtime/env.
     ensure_gitignore(root_path)
+
+    # 7. bd init committed .beads/ before that rule existed; stage the removals.
+    untrack_ignored_beads(root_path)
 
     print(f"bdi: {db} ready on central server {server}")
     return 0
