@@ -55,6 +55,11 @@ from typing import Callable, NamedTuple
 CENTRAL_CONF = Path.home() / ".config" / "beads" / "central.conf"
 GLOBAL_DB = "beads_global"  # bd references a global db; ensure it exists server-side
 
+# Every env prefix bdi injects to route bd at a database. Stripped whenever a
+# child must resolve config the way a bare `bd` would, or must not be routed
+# at all.
+ROUTING_PREFIXES = ("BEADS_DOLT_", "BD_DOLT_")
+
 
 def capture(cmd: list[str], **kw) -> str | None:
     """Stripped stdout of `cmd`, or None if it failed, timed out, or was empty.
@@ -445,7 +450,7 @@ def effective_config(root: Path, key: str) -> str | None:
     # `bd` call resolves — i.e. that the settings landed on disk, not just in
     # our subprocess env.
     out = capture(["bd", "-C", str(root), "config", "get", key],
-                  env=env_without("BEADS_DOLT_", "BD_DOLT_"))
+                  env=env_without(*ROUTING_PREFIXES))
     return None if out is None or out.startswith(f"{key} (not set") else out
 
 
@@ -605,6 +610,44 @@ def profile_conflict(meta: dict, want: Profile) -> str | None:
             "if that is really what you want.")
 
 
+GIDEON_REGISTRY_REFRESH = (Path.home()
+                           / "Work/gideon/bin/morning-coffee/refresh-beads-registry.py")
+
+
+def refresh_fleet_registry(db: str) -> None:
+    """Tell gideon's morning-coffee about the newly initialized repo (gideon-shu4).
+
+    morning-coffee reads issues for every project listed in gideon's
+    beads-projects.json, and nothing can enumerate the fleet remotely: central
+    repos are databases on the mini, work repos are refs/dolt/data on their own
+    git remotes. The generator derives both from THIS machine (central.conf +
+    a ~/Work scan), so a freshly initialized repo only shows up in the brief
+    once it has run. --commit pushes the registry to gideon when it changed.
+
+    Best-effort by design: this is a courtesy to a different repo. A missing
+    gideon checkout, an unreachable mini or a failed push must never turn a
+    successful init into a failure.
+    """
+    if not GIDEON_REGISTRY_REFRESH.is_file():
+        return
+    print("bdi: refreshing gideon's fleet registry")
+    try:
+        # The child self-caps its own dolt probe at 30s; the rest of the budget
+        # is the git push. GIT_TERMINAL_PROMPT keeps a credential prompt from
+        # holding the terminal until the timeout fires.
+        rc = subprocess.run([str(GIDEON_REGISTRY_REFRESH), "--commit"],
+                            env={**env_without(*ROUTING_PREFIXES),
+                                 "GIT_TERMINAL_PROMPT": "0"},
+                            timeout=60).returncode
+        if rc == 0:
+            return
+        why = f"rc={rc}"
+    except (OSError, subprocess.TimeoutExpired) as e:
+        why = str(e)
+    warn(f"gideon registry not refreshed ({why}) — run "
+         f"{GIDEON_REGISTRY_REFRESH} --commit by hand so morning-coffee sees {db}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").strip().splitlines()[0])
     # One mutually exclusive group for every mode, --repoint included, so
@@ -658,8 +701,16 @@ def main(argv: list[str] | None = None) -> int:
     if err := profile_conflict(meta, args.profile):
         return fail(err)
 
-    return args.profile.entry(root_path, db, passthrough, dry_run=args.dry_run,
-                              resuming=meta.get("dolt_database") == db)
+    resuming = meta.get("dolt_database") == db
+    rc = args.profile.entry(root_path, db, passthrough, dry_run=args.dry_run,
+                            resuming=resuming)
+    # Only a first init can add a project the registry has never seen; on resume
+    # the generator would re-derive an identical fleet at the cost of a network
+    # round trip. Anything that goes stale another way is caught by gideon's own
+    # pre-push freshness guard.
+    if rc == 0 and not args.dry_run and not resuming:
+        refresh_fleet_registry(db)
+    return rc
 
 
 if __name__ == "__main__":
