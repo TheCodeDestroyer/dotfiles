@@ -1,0 +1,106 @@
+# Two-line prompt, ❯ on its own line, everything left-packed. Nothing is ever
+# pinned to the right margin -- no $fill, no right_format/RPROMPT.
+#
+# That constraint is the whole point, so don't relax it. Starship renders the
+# prompt by forking a subprocess and passing it --terminal-width="$COLUMNS"
+# captured at fork time. During a sustained drag-resize the fork is still
+# running while the terminal keeps moving, so its output gets painted against a
+# width it wasn't rendered for -- measured at 54 columns stale on a 1-second
+# drag. If the layout pins anything to the right margin, that staleness becomes
+# an overflow: the line wraps, the cursor lands on the continuation row, and
+# zsh's redraw (cursor-up to the prompt's first row, then ESC[0J) walks up the
+# number of rows it *expects*, misses the real first row, and strands it on
+# screen. One stranded row per intermediate width = the smear.
+#
+# Left-packed content can't overflow: a stale render is just a line of slightly
+# the wrong length starting at column 0. Total width here is ~66 columns, so it
+# stays on one row on any pane wider than that. [git_branch].truncation_length
+# below is the knob -- lower it if you work in narrow split panes.
+#
+# The only real fix for the fork race is a prompt that renders in-process with
+# no subprocess at all (powerlevel10k). Until then, the budget is the guarantee:
+# left-packing buys headroom, not immunity -- a stale render still wraps once it
+# outgrows the pane, so keep line 1 inside the ~66 columns above.
+format = """
+$os$directory$git_branch$git_status$status$cmd_duration$jobs$python$nodejs$bun$deno$golang$rust$kubernetes$aws$time
+$character"""
+
+add_newline = false
+
+[os]
+disabled = false
+style = ""
+[os.symbols]
+# Private Use Area codepoint (Nerd Font). If this ever renders as a blank, it
+# got stripped in transit -- it is U+F302, not a space.
+Macos = " "
+
+[directory]
+style = "blue"
+truncation_length = 4
+
+[git_branch]
+# U+E0A0, same as starship's default -- kept explicit because this line was
+# once stripped to a bare space, which silently blanks the glyph.
+symbol = " "
+style = "green"
+format = "[$symbol$branch]($style) "
+# Bounds line 1 so it stays under the pane width and never wraps (see header).
+# 20 fits a typical epic/... branch; lower it if you use narrow split panes.
+truncation_length = 20
+
+[git_status]
+style = "green"
+# Each count carries its own trailing space so segments never jam together
+format = '([$ahead_behind$stashed]($style))([$staged$modified](yellow))([$untracked](blue))([$conflicted](red))'
+ahead = "⇡${count} "
+behind = "⇣${count} "
+diverged = "⇣${behind_count} ⇡${ahead_count} "
+stashed = "*${count} "
+staged = "+${count} "
+modified = "!${count} "
+untracked = "?${count} "
+conflicted = "~${count} "
+
+[status]
+disabled = false
+symbol = "✘"
+style = "red"
+
+[cmd_duration]
+min_time = 3000
+style = "yellow dim"
+format = "[$duration]($style) "
+
+[jobs]
+style = "green"
+
+[time]
+disabled = false
+time_format = "%H:%M:%S"
+style = "dim cyan"
+format = "[$time]($style)"
+
+# Env segments. Starship only shows these in relevant projects. Each override
+# strips the default leading "via " -- keep new entries consistent with that.
+[python]
+format = '[${symbol}${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+[nodejs]
+format = "[$symbol($version )]($style)"
+
+[kubernetes]
+disabled = false
+detect_files = ["kustomization.yaml", "helmfile.yaml", "Chart.yaml"]
+detect_folders = ["k8s"]
+
+[aws]
+format = '[$symbol($profile )(\[$region\] )]($style)'
+
+[bun]
+format = "[$symbol($version )]($style)"
+[deno]
+format = "[$symbol($version )]($style)"
+[golang]
+format = "[$symbol($version )]($style)"
+[rust]
+format = "[$symbol($version )]($style)"

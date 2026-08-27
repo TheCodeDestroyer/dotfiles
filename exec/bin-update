@@ -42,6 +42,8 @@ ln -sf ~/bin/.zshfn ~/.zshfn && echo "Linked .zshfn"
 [ ! -f ~/.npmrc ] && cp ~/bin/.npmrc.template ~/.npmrc && echo "Created .npmrc from template"
 mkdir -p ~/.config/sheldon
 ln -sf ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Linked sheldon.toml"
+ln -sf ~/bin/starship.toml ~/.config/starship.toml && echo "Linked starship.toml"
+ln -sf ~/bin/.wezterm.lua ~/.wezterm.lua && echo "Linked .wezterm.lua"
 mkdir -p ~/.claude
 ln -sf ~/bin/exec/claude-statusline ~/.claude/statusline.sh && echo "Linked claude-statusline"
 

@@ -65,3 +65,20 @@ zstyle ':completion:*:*:docker-*:*' option-stacking yes
 
 # agent-browser: auto-close idle browser after 1h to prevent runaway Chrome processes
 export AGENT_BROWSER_IDLE_TIMEOUT_MS=3600000
+
+#PROMPT
+# starship's init (via the ohmyzsh starship plugin, inside `sheldon source`
+# above) always sets RPROMPT to a $(starship prompt --right ...) subshell, even
+# when starship.toml defines no right_format -- so it forks a process per
+# redraw just to print nothing. Clear it here, afterwards.
+#
+# It is also load-bearing, not just a micro-optimisation: nothing may sit at
+# the right margin, or starship's stale-width fork wraps the line and smears
+# debris down the screen. Full mechanism in ~/.config/starship.toml.
+#
+# This must stay AFTER the plugin runs, so do not `apply = ['defer']` to
+# [plugins.ohmyzsh] in sheldon.toml -- the clear would lose the race silently.
+#
+# Do NOT add a TRAPWINCH calling `zle reset-prompt` here: zsh already redraws
+# on WINCH, so a trap doubles every repaint and doubles the debris. Measured.
+RPROMPT=''
