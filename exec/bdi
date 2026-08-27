@@ -10,8 +10,11 @@ over Tailscale). Issues live off-machine, never on the repo's git remote:
      --skip-agents --skip-hooks   (lays the beads schema into that database)
   3. write .beads/ env file so every bd call in this repo routes to the central
      server (bd otherwise silently defaults to the machine-wide shared server)
-  4. bd dolt commit (commit the initial schema) + .gitignore hygiene (which
-     also untracks the .beads/ runtime files `bd init` may have committed)
+  4. correct config.yaml (no auto-push, no export git-add, and above all no
+     sync.remote — bd init aims that at the repo's own git remote regardless
+     of profile), bd dolt commit (commit the initial schema), + .gitignore
+     hygiene (which also untracks the .beads/ runtime files `bd init` may
+     have committed)
 
 The central connection is read from ~/.config/beads/central.conf
 (BEADS_DOLT_SERVER_HOST/PORT/USER + BEADS_DOLT_PASSWORD/TLS; env vars override).
@@ -338,6 +341,26 @@ def write_env_file(root: Path, cfg: dict) -> Path:
     return env_path
 
 
+# What a central repo's config.yaml has to say, whatever `bd init` left there
+# (None = the key must be absent; see apply_config_keys).
+#
+# dolt.auto-push: there is no git remote to push issues to, and every write
+#   would otherwise spend a failing attempt on one.
+# export.git-add: bd would stage an auto-exported .beads/issues.jsonl into the
+#   repo, which is the one thing .gitignore is set up here to prevent.
+# sync.remote: `bd init` derives it from origin whatever the profile, aiming a
+#   personal repo's issue database at the repo's own — often public — git
+#   remote. Nothing about these issues belongs there; they live on the central
+#   server. Deleted after the fact because there is no lever earlier: bd init
+#   has no flag to suppress it (`--remote` only sets one), and `bd config
+#   unset` is a bd write, so it would attempt the very push being disabled.
+CENTRAL_CONFIG = {
+    "dolt.auto-push": "false",
+    "export.git-add": "false",
+    "sync.remote": None,
+}
+
+
 def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool,
                  resuming: bool) -> int:
     cfg = load_central_config()
@@ -355,6 +378,9 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
             ("create db", f"CREATE DATABASE IF NOT EXISTS {db}  (+ {GLOBAL_DB})"),
             ("bd init", init_plan_line(resuming, db, init_argv)),
             ("env file", ".beads/ -> BEADS_DOLT_SERVER_HOST/PORT/USER/PASSWORD"),
+            ("config.yaml", ", ".join(f"{k}: {v}" if v is not None
+                                      else f"drop {k}"
+                                      for k, v in CENTRAL_CONFIG.items())),
             ("then", "bd dolt commit"),
             (".gitignore", f"ensure '.beads/*' + keep {TRACKED_BEADS_LIST}"),
             ("untrack", "git rm --cached the ignored .beads/ files bd init "
@@ -384,10 +410,10 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
     env_path = write_env_file(root_path, cfg)
     print(f"bdi: wrote {env_path}")
 
-    # 4. Central repos have no push remote — disable auto-push directly in
-    #    config.yaml (a plain file edit; `bd config set` would itself trigger a
-    #    push attempt). Governs all future writes in this repo.
-    apply_config_keys(root_path / ".beads" / "config.yaml", {"dolt.auto-push": "false"})
+    # 4. Correct what `bd init` wrote into config.yaml (see the constants
+    #    above). Plain file edits: `bd config set` would itself trigger the very
+    #    push attempt being disabled here. Governs all future writes in this repo.
+    apply_config_keys(root_path / ".beads" / "config.yaml", CENTRAL_CONFIG)
 
     # 5. Commit the initial schema so the working set is clean. --sandbox skips
     #    the auto-push attempt (central repos have no origin to push to).
@@ -570,9 +596,11 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
         keys["sync.remote"] = f'"{remote}"'
     apply_config_keys(cfg_path, keys)
 
-    # 3. Verify the opt-out actually took. bd can persist its own nested
-    #    `dolt:` block, in which case our flat key would sit next to it and the
-    #    repo would silently keep using the machine-wide shared server.
+    # 3. Verify the opt-out actually resolves. Not a check on the write —
+    #    apply_config_keys already cuts any competing nested `dolt:` block —
+    #    but on everything layered over it that bdi cannot see from the file:
+    #    the machine-wide ~/.config/bd/config.yaml, BD_ env vars, bd version
+    #    drift. effective_config asks bd, which is the only authority.
     if effective_config(root_path, "dolt.shared-server") != "false":
         return fail(f"{cfg_path} still resolves dolt.shared-server to true — "
                     "fix it by hand before using this repo (the database would "
@@ -595,28 +623,90 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
 # Config file helpers                                                          #
 # --------------------------------------------------------------------------- #
 
-def apply_config_keys(cfg: Path, keys: dict[str, str]) -> None:
+def apply_config_keys(cfg: Path, keys: dict[str, str | None]) -> None:
     """Ensure config.yaml has exactly one active `key: value` line per key.
 
-    Replaces any active or commented occurrence in place; appends the rest.
+    Replaces any active or commented occurrence in place; appends the rest. A
+    None value means the key has to be ABSENT — absent, not YAML null — for
+    settings where any value at all would be wrong. That is the same sentinel
+    `patch_frontmatter` uses in exec/claude-update, for the same reason.
     Done in a single read/write so the keys land atomically — a fresh `bd init`
     ships a commented `# sync.remote:` placeholder, so `bd config set` can't be
     relied on (it edits that placeholder in place but leaves it commented).
+
+    A nested block counts as an occurrence. `bd init` writes some settings as a
+    mapping (`dolt:` / `    shared-server: true`), and with both spellings in
+    the file bd resolves them inconsistently: it reads shared-server out of the
+    block but auto-push off the flat line. Writing the flat key is therefore no
+    fix while the block survives, so managed keys are cut out of the block —
+    taking the header with them once nothing is left underneath it. A header
+    whose children were all kept, or that had none to begin with, stays.
+
+    Only active lines open or extend a block: bd's shipped config comments out
+    whole example mappings (`# export:` / `#   git-add: false`), and those are
+    documentation, not settings.
+
+    The dialect this reads, and no more: top-level keys, one level of nesting,
+    scalar values, and `foo:` alone on a line as a block header. That covers
+    everything bd writes; anything richer belongs in a real YAML parser, which
+    would cost this file its comments (see the module header).
     """
     out: list[str] = []
     seen: set[str] = set()
+    block: str | None = None   # top-level mapping currently being scanned
+    header: int | None = None  # index of its header line in `out`
+    kept = removed = False     # what became of the lines under it
+
+    def managed(text: str) -> str | None:
+        """Which key `text` spells, nested and flat alike — the trailing colon
+        is what keeps the prefix test from reading dolt.auto-push-extra as
+        dolt.auto-push."""
+        return next((k for k in keys if text.startswith(k + ":")), None)
+
+    def close_block() -> None:
+        nonlocal block, header, kept, removed
+        if header is not None and removed and not kept:
+            del out[header]
+        block, header, kept, removed = None, None, False, False
+
     for line in cfg.read_text().splitlines():
-        body = line.lstrip()
-        if body.startswith("#"):
-            body = body[1:].lstrip()
-        matched = next((k for k in keys if body.startswith(k + ":")), None)
+        stripped = line.strip()
+        active = bool(stripped) and not stripped.startswith("#")
+
+        if active and line[:1].isspace():          # a line inside a mapping
+            if block is not None:
+                if managed(f"{block}.{stripped}") is not None:
+                    removed = True
+                    continue  # respelled flat below, or dropped outright
+                kept = True
+            out.append(line)
+            continue
+
+        if active:
+            close_block()
+
+        matched = managed(stripped if active else stripped.lstrip("#").strip())
         if matched is not None:
-            if matched not in seen:
-                out.append(f"{matched}: {keys[matched]}")
-                seen.add(matched)
-            continue  # drop duplicates / the commented variant
+            want = keys[matched]
+            if want is None:
+                # Delete the setting. A commented one is left alone: bd ships
+                # those as documentation, and blanking a placeholder that is
+                # already inert says nothing.
+                if active:
+                    continue
+            else:
+                if matched not in seen:
+                    out.append(f"{matched}: {want}")
+                    seen.add(matched)
+                continue  # drop duplicates / the commented variant
+
+        if active and stripped.endswith(":"):
+            block, header = stripped[:-1], len(out)
         out.append(line)
-    missing = [(k, v) for k, v in keys.items() if k not in seen]
+    close_block()
+
+    missing = [(k, v) for k, v in keys.items()
+               if v is not None and k not in seen]
     if missing:
         if out and out[-1].strip() != "":
             out.append("")
