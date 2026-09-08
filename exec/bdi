@@ -128,6 +128,28 @@ def read_metadata(root: Path) -> dict:
         return {}
 
 
+EMBEDDED_DB_DIR = ".beads/embeddeddolt"
+
+
+def orphaned_database(root: Path) -> str | None:
+    """An embedded database this repo no longer has the identity for, or None.
+
+    metadata.json is tracked, the database directory is not, and `bd init`
+    only STAGES its initial commit — so discarding local changes before that
+    commit lands deletes the repo's beads identity and leaves the database
+    behind. In that state `bd init` refuses ("already initialized") while bdi,
+    reading no metadata, still thinks the repo is fresh: the run dies on bd's
+    message with nothing to act on.
+
+    bdi cannot rebuild metadata.json here. Re-running `bd init` would mint a
+    fresh project_id against the very database the lost one named (see
+    TRACKED_BEADS_FILES), so this only reports the state and embedded_main
+    refuses.
+    """
+    db_dir = root / EMBEDDED_DB_DIR
+    return str(db_dir) if db_dir.is_dir() else None
+
+
 def bd_init_or_resume(db: str, argv: list[str], env: dict, resuming: bool) -> int:
     """Run `bd init` with a profile's arguments, or announce the resume skip.
 
@@ -162,7 +184,13 @@ def init_plan_line(resuming: bool, db: str, argv: list[str], env_note: str = "")
 # rebuild it risks minting a fresh project_id against the very database the old
 # one named.
 TRACKED_BEADS_FILES = ("config.yaml", "metadata.json")
-TRACKED_BEADS_LIST = ", ".join(TRACKED_BEADS_FILES)  # for user-facing messages
+
+# Work repos carry bd's git hooks on top of that: the hooks are what move issue
+# data on push and merge, so a clone without them silently stops syncing. The
+# trailing slash is load-bearing — `.beads/*` excludes the directory itself,
+# and git will not look inside an excluded directory, so the negation has to
+# re-include the directory before anything in it can be tracked.
+TRACKED_BEADS_WORK = TRACKED_BEADS_FILES + ("hooks/",)
 
 
 def ignored_paths(root: Path, paths: list[str]) -> list[str]:
@@ -190,8 +218,10 @@ def untrack_ignored_beads(root: Path) -> None:
     mean anything. Left tracked, .beads/interactions.jsonl (an append-only,
     per-machine interaction log) re-diffs on every bd write, forever.
 
-    Central profile only: work repos are meant to commit .beads/, so bd's
-    config and hooks travel with the clone (see embedded_main's closing note).
+    Both profiles: what differs is the keep-list ensure_gitignore wrote, not
+    whether the sweep runs. Work repos do commit .beads/ so bd's config and
+    hooks travel with the clone — but "the parts a clone needs", not the whole
+    directory bd init staged.
 
     Staged, not committed: bdi does not make commits in this profile, and which
     commit these deletions belong in is the user's call.
@@ -211,21 +241,27 @@ def untrack_ignored_beads(root: Path) -> None:
         print(f"bdi: untracked {', '.join(stale)} — staged, commit to apply")
 
 
-def ensure_gitignore(root: Path) -> None:
-    """Idempotently ignore .beads/ runtime, keeping the tracked files tracked."""
+def ensure_gitignore(root: Path, tracked: tuple[str, ...]) -> None:
+    """Idempotently ignore .beads/ runtime, keeping the tracked files tracked.
+
+    `tracked` is the profile's keep-list: central repos need only the config
+    and identity, work repos also need bd's hooks (TRACKED_BEADS_WORK). No
+    default — a profile that keeps the wrong set fails silently.
+    """
     gi = root / ".gitignore"
     lines = gi.read_text().splitlines() if gi.exists() else []
     has_ignore = ".beads/*" in lines
-    missing = [f"!.beads/{name}" for name in TRACKED_BEADS_FILES
+    missing = [f"!.beads/{name}" for name in tracked
                if f"!.beads/{name}" not in lines]
     if has_ignore and not missing:
         return
 
+    listing = ", ".join(tracked)
     additions: list[str] = []
     if not has_ignore:
         additions += [
             "",
-            f"# Beads: track only {TRACKED_BEADS_LIST}; "
+            f"# Beads: track only {listing}; "
             "ignore db/runtime/connection env",
             ".beads/*",
         ]
@@ -236,9 +272,36 @@ def ensure_gitignore(root: Path) -> None:
     if additions and additions[0] == "" and (not lines or lines[-1] == ""):
         additions = additions[1:]
 
+    # write_text follows a symlink, and a clone may legitimately ship
+    # .gitignore as one — but then these rules land on whatever it points at,
+    # outside the repo bdi was aimed at. Say what was needed and let the user
+    # place it. Only reached when there is something to write.
+    if gi.is_symlink():
+        needed = " ".join(ln for ln in additions if ln and not ln.startswith("#"))
+        warn(f"{gi} is a symlink — not writing through it. Add by hand, "
+             f"wherever it belongs: {needed}")
+        return
+
     text = "\n".join(lines + additions).rstrip("\n") + "\n"
     gi.write_text(text)
-    print(f"bdi: updated {gi} (track {TRACKED_BEADS_LIST})")
+    print(f"bdi: updated {gi} (track {listing})")
+
+
+def track_beads_files(root: Path, tracked: tuple[str, ...]) -> None:
+    """Write the profile's .beads/ keep-list, then untrack what bd init added.
+
+    `bd init` git-adds the whole directory, database and interactions.jsonl
+    included — a per-machine, append-only log that would re-diff on every bd
+    write for the life of the repo. The ignore rule only lands here, after
+    that, so the over-tracked paths need staging away by hand.
+    """
+    ensure_gitignore(root, tracked)
+    untrack_ignored_beads(root)
+
+
+def gitignore_plan_line(tracked: tuple[str, ...]) -> str:
+    """The .gitignore row of a --dry-run plan, for either profile."""
+    return f"ensure '.beads/*' + keep {', '.join(tracked)}"
 
 
 # --------------------------------------------------------------------------- #
@@ -382,7 +445,7 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
                                       else f"drop {k}"
                                       for k, v in CENTRAL_CONFIG.items())),
             ("then", "bd dolt commit"),
-            (".gitignore", f"ensure '.beads/*' + keep {TRACKED_BEADS_LIST}"),
+            (".gitignore", gitignore_plan_line(TRACKED_BEADS_FILES)),
             ("untrack", "git rm --cached the ignored .beads/ files bd init "
                         "committed (staged, not committed)"),
         ])
@@ -420,10 +483,7 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
     run(["bd", "dolt", "commit", "--sandbox"], env=env)
 
     # 6. Keep config.yaml and metadata.json tracked; ignore db/runtime/env.
-    ensure_gitignore(root_path)
-
-    # 7. bd init committed .beads/ before that rule existed; stage the removals.
-    untrack_ignored_beads(root_path)
+    track_beads_files(root_path, TRACKED_BEADS_FILES)
 
     print(f"bdi: {db} ready on central server {server}")
     return 0
@@ -543,8 +603,51 @@ def effective_config(root: Path, key: str) -> str | None:
     return None if out is None or out.startswith(f"{key} (not set") else out
 
 
+def report_uncommitted(root: Path) -> None:
+    """Say whether .beads/ actually landed in a commit, and why it may not have.
+
+    `bd init` makes the initial .beads/ commit itself but downgrades a failure
+    to `Warning: failed to commit beads files` and still exits 0 — so a
+    rejecting hook, or a signing key git cannot use, leaves the files staged
+    while every success message still prints. Left there, the next `git
+    checkout`/`reset` discards the repo's identity (see orphaned_database).
+    """
+    out = git_out(root, "status", "--porcelain", "--", ".beads", ".gitignore")
+    pending = [ln[3:] for ln in (out or "").splitlines()]
+    if not pending:
+        print("bdi: .beads/ is committed — config and hooks travel with the repo")
+        return
+    shown = ", ".join(pending[:4]) + (", …" if len(pending) > 4 else "")
+
+    # bdi rewrites .gitignore and stages the untracking AFTER bd's own commit,
+    # so pending work is the normal ending. What separates it from a failure is
+    # whether HEAD carries .beads/ at all — nothing there means bd's commit did
+    # not happen. An unborn HEAD is neither: there is no commit to have failed.
+    unborn = git_out(root, "rev-parse", "--verify", "--quiet", "HEAD") is None
+    if unborn or git_out(root, "ls-tree", "--name-only", "HEAD", "--", ".beads"):
+        print(f"bdi: commit .beads/ and .gitignore ({shown})")
+        return
+    warn(f"HEAD carries no .beads/ — `bd init`'s own commit did not happen, and "
+         f"it reports that as a warning while still exiting 0. {len(pending)} "
+         f"path(s) are staged instead ({shown}); committing them by hand will "
+         "fail the same way until the cause is fixed (a rejecting hook, or "
+         "commit.gpgsign set with no usable user.signingkey in this repo). "
+         "Until it lands, a checkout or reset discards the repo's beads "
+         "identity and leaves the database orphaned.")
+
+
 def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool,
                   resuming: bool) -> int:
+    if not resuming and (orphan := orphaned_database(root_path)):
+        return fail(
+            f"{orphan} exists but .beads/metadata.json does not name this "
+            f"database ({db}) — the identity was lost while the database "
+            "survived, and `bd init` will refuse to run over it. Restore the "
+            "file if a commit carries it (`git checkout HEAD -- "
+            ".beads/metadata.json`); otherwise start clean with `rm -rf "
+            ".beads` — a beads database already on origin (refs/dolt/data) is "
+            "adopted on the next init, so the issues are not lost.")
+
     origin = git_out(root_path, "remote", "get-url", "origin")
     remote = sync_remote_url(origin) if origin else None
     if origin and not remote:
@@ -561,12 +664,13 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
         hooks_line = (f"keep {', '.join(managers)} (restore bd's core.hooksPath)"
                       if managers or prior_hooks else "bd hooks via core.hooksPath")
         print_plan([
-            ("profile", "work (embedded Dolt in .beads/embeddeddolt/)"),
+            ("profile", f"work (embedded Dolt in {EMBEDDED_DB_DIR}/)"),
             ("database", db),
             ("bd init", init_plan_line(resuming, db, init_argv, env_note)),
             ("sync.remote", remote or "none (no git origin) — issues stay local"),
             ("config.yaml", "dolt.shared-server: false"),
             ("hooks", hooks_line),
+            (".gitignore", gitignore_plan_line(TRACKED_BEADS_WORK)),
             ("then", "bd dolt commit"),
         ])
         return 0
@@ -613,9 +717,12 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
     #    push IS the sync — it writes refs/dolt/data on the repo's git remote.
     run(["bd", "dolt", "commit"], env=env)
 
+    # 6. Track the parts of .beads/ a clone needs, and only those.
+    track_beads_files(root_path, TRACKED_BEADS_WORK)
+
     print(f"bdi: {db} ready (embedded)"
           + (f", syncing over {remote}" if remote else ", local-only (no origin)"))
-    print("bdi: commit .beads/ so the config and hooks travel with the repo")
+    report_uncommitted(root_path)
     return 0
 
 
