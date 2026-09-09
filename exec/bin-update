@@ -51,6 +51,35 @@ link ~/bin/mise-config.toml ~/.config/mise/config.toml
 link ~/bin/.wezterm.lua ~/.wezterm.lua
 link ~/bin/exec/claude-statusline ~/.claude/statusline.sh
 
+# mise secrets live in a machine-local conf.d file, never in this repo — it is
+# public, and age ciphertext published once cannot be rotated out of git history.
+# A missing age key is loud (mise errors on every command), but a missing
+# secrets.toml is silent: mise resolves cleanly and every token is simply absent,
+# so each consumer fails somewhere further downstream instead.
+echo "Checking mise secrets..."
+AGE_KEY=~/.config/mise/age.txt
+AGE_REF="op://Private/mise age key/age.txt"
+SECRETS=~/.config/mise/conf.d/secrets.toml
+
+if [ -f "$AGE_KEY" ]; then
+    echo "Found mise age key"
+elif op read "$AGE_REF" > "$AGE_KEY" 2>/dev/null && [ -s "$AGE_KEY" ]; then
+    chmod 600 "$AGE_KEY" && echo "Restored mise age key from 1Password"
+else
+    rm -f "$AGE_KEY"
+    echo "WARNING: $AGE_KEY is missing and 1Password could not supply it."
+    echo "         Sign in with 'op signin', then re-run, or restore it by hand:"
+    echo "         op read \"$AGE_REF\" > $AGE_KEY && chmod 600 $AGE_KEY"
+fi
+
+if [ -f "$SECRETS" ]; then
+    echo "Found mise secrets"
+else
+    echo "WARNING: $SECRETS is missing."
+    echo "         mise resolves without error and every token will be empty."
+    echo "         Machine-local by design; restore it from your backup."
+fi
+
 echo "Generating .gitconfig from template..."
 cp ~/bin/.gitconfig.template ~/.gitconfig
 
