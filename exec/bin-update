@@ -58,18 +58,18 @@ link ~/bin/exec/claude-statusline ~/.claude/statusline.sh
 # so each consumer fails somewhere further downstream instead.
 echo "Checking mise secrets..."
 AGE_KEY=~/.config/mise/age.txt
-AGE_REF="op://Private/mise age key/age.txt"
+AGE_REF="op://private/mise age key/age.txt"
 SECRETS=~/.config/mise/conf.d/secrets.toml
 
 if [ -f "$AGE_KEY" ]; then
     echo "Found mise age key"
-elif op read "$AGE_REF" > "$AGE_KEY" 2>/dev/null && [ -s "$AGE_KEY" ]; then
-    chmod 600 "$AGE_KEY" && echo "Restored mise age key from 1Password"
+elif op read --out-file "$AGE_KEY" "$AGE_REF" >/dev/null 2>&1; then
+    # --out-file writes at mode 0600 and leaves nothing behind on failure.
+    echo "Restored mise age key from 1Password"
 else
-    rm -f "$AGE_KEY"
     echo "WARNING: $AGE_KEY is missing and 1Password could not supply it."
     echo "         Sign in with 'op signin', then re-run, or restore it by hand:"
-    echo "         op read \"$AGE_REF\" > $AGE_KEY && chmod 600 $AGE_KEY"
+    echo "         op read --out-file $AGE_KEY \"$AGE_REF\""
 fi
 
 if [ -f "$SECRETS" ]; then
@@ -77,7 +77,8 @@ if [ -f "$SECRETS" ]; then
 else
     echo "WARNING: $SECRETS is missing."
     echo "         mise resolves without error and every token will be empty."
-    echo "         Machine-local by design; restore it from your backup."
+    echo "         Backed up nowhere by design; recreate it (five tokens,"
+    echo "         age-encrypted) — see the gideon setup-dev-env skill, Section 6."
 fi
 
 echo "Generating .gitconfig from template..."
