@@ -36,16 +36,20 @@ echo "Adding executable privilige to scripts..."
 chmod +x ~/bin/exec/*
 
 echo "Linking config files..."
-ln -sf ~/bin/.zshrc ~/.zshrc && echo "Linked .zshrc"
-ln -sf ~/bin/.zshenv ~/.zshenv && echo "Linked .zshenv"
-ln -sf ~/bin/.zshfn ~/.zshfn && echo "Linked .zshfn"
+link() {
+    mkdir -p "$(dirname "$2")"
+    ln -sf "$1" "$2" && echo "Linked $(basename "$1")"
+}
+
+link ~/bin/.zshrc ~/.zshrc
+link ~/bin/.zshenv ~/.zshenv
+link ~/bin/.zshfn ~/.zshfn
 [ ! -f ~/.npmrc ] && cp ~/bin/.npmrc.template ~/.npmrc && echo "Created .npmrc from template"
-mkdir -p ~/.config/sheldon
-ln -sf ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml && echo "Linked sheldon.toml"
-ln -sf ~/bin/starship.toml ~/.config/starship.toml && echo "Linked starship.toml"
-ln -sf ~/bin/.wezterm.lua ~/.wezterm.lua && echo "Linked .wezterm.lua"
-mkdir -p ~/.claude
-ln -sf ~/bin/exec/claude-statusline ~/.claude/statusline.sh && echo "Linked claude-statusline"
+link ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml
+link ~/bin/starship.toml ~/.config/starship.toml
+link ~/bin/mise-config.toml ~/.config/mise/config.toml
+link ~/bin/.wezterm.lua ~/.wezterm.lua
+link ~/bin/exec/claude-statusline ~/.claude/statusline.sh
 
 echo "Generating .gitconfig from template..."
 cp ~/bin/.gitconfig.template ~/.gitconfig

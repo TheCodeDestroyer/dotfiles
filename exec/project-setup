@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+#
+# project-setup - give a project its own Clerk and Convex credentials.
+#
+# Both CLIs resolve a credential found in the environment *before* they consult
+# the account you logged in as, and neither says which one it used. A project
+# carrying its own keys is therefore the only configuration that behaves the
+# same for you, for a teammate, and on a machine you have not logged into yet.
+#
+# Idempotent: a key that is already present is left alone, so this is safe to
+# re-run after a fresh clone or a partial run.
+#
+# Usage: project-setup [project-dir]     (default: current directory)
+
+set -euo pipefail
+
+case "${1:-}" in
+  -h|--help) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+PROJECT_DIR="${1:-$PWD}"
+cd "$PROJECT_DIR" || { echo "No such directory: $PROJECT_DIR" >&2; exit 1; }
+PROJECT_DIR="$PWD"
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
+
+ENV_FILE="$PROJECT_DIR/.env.local"
+
+say() { printf '  %s\n' "$*"; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+has_var() { [ -f "$ENV_FILE" ] && grep -qE "^${1}=." "$ENV_FILE"; }
+
+# Variables as mise resolves them *for the target directory* — the script cd'd
+# there above, so this is the tree's view, not the shell's. Taken once: the
+# answer cannot change while we run.
+#
+# A failure here must be fatal, not empty. mise treats one untrusted or malformed
+# config anywhere in the chain as fatal for the whole resolution, so swallowing
+# the error would leave SCOPE empty and silently downgrade a managed tree to
+# "nothing to enforce" — the exact failure the marker exists to catch.
+if ! TREE_ENV="$(mise env --json 2>&1)"; then
+  die "cannot resolve the mise environment for this directory:
+$TREE_ENV
+       Trust or fix the mise config in this tree, then re-run."
+fi
+tree_var() { printf '%s' "$TREE_ENV" | jq -r --arg k "$1" '.[$k] // empty'; }
+
+# The marker's presence is what distinguishes a managed tree from an unmanaged
+# one. Checking a value that is merely absent cannot tell those apart, so a
+# broken or untrusted anchor would silently read as "nothing to enforce".
+SCOPE="$(tree_var PROJECT_SETUP_SCOPE)"
+
+echo "project-setup: $PROJECT_NAME"
+say "dir: $PROJECT_DIR"
+if [ -n "$SCOPE" ]; then
+  say "scope: $SCOPE"
+else
+  say "scope: none — no tree anchor above this project, account checks disabled"
+fi
+
+# --- Clerk -----------------------------------------------------------------
+# `clerk env pull` needs a real account session; there is no key-based
+# substitute on a self-serve Clerk account, and only one session can exist per
+# machine. So this is the one step that can require a login first.
+setup_clerk() {
+  grep -q '"@clerk/' "$PROJECT_DIR/package.json" 2>/dev/null || {
+    say "clerk: no @clerk dependency, skipping"; return 0; }
+  if has_var CLERK_SECRET_KEY; then
+    say "clerk: CLERK_SECRET_KEY already present, skipping"; return 0
+  fi
+  command -v clerk >/dev/null 2>&1 || { say "clerk: CLI not found, skipping"; return 0; }
+
+  local session expected
+  # `|| true`: the CLI exits non-zero in an unconfigured directory, and with
+  # `set -e -o pipefail` that killed the script before the checks below could
+  # explain why.
+  session="$(clerk whoami --json 2>/dev/null | jq -r '.email // empty' || true)"
+  expected="$(tree_var CLERK_EXPECTED_ACCOUNT)"
+
+  # A managed tree that forgot the assertion is a configuration error, not a
+  # licence to proceed unchecked — that is the whole point of the marker.
+  if [ -n "$SCOPE" ] && [ -z "$expected" ]; then
+    die "tree '$SCOPE' declares PROJECT_SETUP_SCOPE but no CLERK_EXPECTED_ACCOUNT.
+       Add it to that tree's mise.toml, or remove the marker if the tree is unmanaged."
+  fi
+
+  # Clerk keeps exactly one session per machine and the keychain entry is not
+  # scoped by CLERK_CONFIG_DIR, so there is no way to *select* an account here;
+  # refusing is the next best thing. Stop before touching the network, too: an
+  # authed call on an expired session can trigger a refresh that fails and makes
+  # the CLI delete the stored credentials outright.
+  if [ -z "$session" ]; then
+    die "not logged in to Clerk. Run 'clerk auth login'${expected:+ as $expected}, then re-run."
+  fi
+  if [ -n "$expected" ] && [ "$session" != "$expected" ]; then
+    die "clerk session is '$session', this tree expects '$expected'.
+       Run 'clerk auth login' as that account, then re-run.
+       (Declared by CLERK_EXPECTED_ACCOUNT in this tree's mise.toml.)"
+  fi
+  say "clerk: session '$session'${expected:+ matches this tree}"
+
+  clerk env pull || say "clerk: env pull failed — wrong account? run 'clerk auth login' and retry"
+}
+
+# --- Convex ----------------------------------------------------------------
+# Minting needs account access, which comes from 1Password at call time rather
+# than from the environment. `--save-env` writes the key straight into
+# .env.local so it never passes through a clipboard or a terminal transcript.
+setup_convex() {
+  [ -d "$PROJECT_DIR/convex" ] || return 0
+  if has_var CONVEX_DEPLOY_KEY; then
+    say "convex: CONVEX_DEPLOY_KEY already present, skipping"; return 0
+  fi
+
+  # Token names show up in the Convex dashboard's list, so make them identify
+  # the machine rather than the person — one human can have several.
+  local machine ref token
+  machine="$(scutil --get ComputerName 2>/dev/null || hostname -s)"
+  machine="$(printf '%s' "${machine// /-}" | tr -cd 'A-Za-z0-9._-')"
+
+  if [ -z "$SCOPE" ]; then
+    say "convex: no account scope for this path, mint manually:"
+    say "        convex deployment token create $machine --save-env"
+    return 0
+  fi
+
+  # The account reference lives in the tree anchor next to the scope marker, so
+  # one file declares everything about who owns this tree. It is an op://
+  # pointer, not a secret, which is why it can sit in [env].
+  ref="$(tree_var CONVEX_ACCOUNT_REF)"
+  if [ -z "$ref" ]; then
+    say "convex: tree '$SCOPE' declares no CONVEX_ACCOUNT_REF, cannot mint"; return 0
+  fi
+  # `op read` on one reference, not `op run --env-file`: `op run` also scans the
+  # ambient environment for op:// references and fails on any that no longer
+  # resolve, so one stale reference elsewhere in the shell would break every mint.
+  if ! token="$(op read "$ref" 2>/dev/null)"; then
+    say "convex: could not read $ref from 1Password"; return 0
+  fi
+
+  # No --prod, deliberately. A prod-scoped key overrides CONVEX_DEPLOYMENT, so
+  # one sitting in .env.local would point local development at production with
+  # nothing to warn you.
+  say "convex: minting dev deploy key '$machine' as $SCOPE"
+  CONVEX_OVERRIDE_ACCESS_TOKEN="$token" \
+    convex deployment token create "$machine" --save-env \
+    || say "convex: mint failed — does a dev deployment exist for this project?"
+}
+
+setup_clerk
+setup_convex
+
+echo "done."

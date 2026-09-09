@@ -33,11 +33,6 @@ function auth-convex
   echo "{ \"accessToken\": \"$(op read $CONVEX_AUTH_TOKEN)\" }" > ~/.convex/config.json
 }
 
-function auth-convex-work
-{
-  echo "{ \"accessToken\": \"$(op read $CONVEX_WORK_AUTH_TOKEN)\" }" > ~/.convex/config.json
-}
-
 
 # DOCKER
 

@@ -1,0 +1,44 @@
+# Global mise config, linked to ~/.config/mise/config.toml by exec/bin-update.
+#
+# Named mise-config.toml in the repo, not mise.toml: a `mise.toml` in ~/bin would
+# be picked up as a project config for that directory.
+#
+# Tools and settings only. Secrets live in ~/.config/mise/conf.d/secrets.toml,
+# which is machine-local and never enters this repo — it is public, and age
+# ciphertext published once can never be rotated out of git history. mise merges
+# every file in conf.d/ with this one, so the split needs no tooling.
+
+[tools]
+node = "latest"
+bun = "latest"
+go = "latest"
+python = "3"
+uv = "latest"
+rust = "latest"
+
+"npm:pnpm" = "latest-10"
+"npm:prettier" = "latest"
+"npm:@openai/codex" = "latest"
+"npm:vercel" = "latest"
+"npm:convex" = "latest"
+"npm:skills" = "latest"
+"npm:typescript" = "latest"
+"npm:typescript-language-server" = "latest"
+"npm:opensrc" = "latest"
+
+# Pinned, not "latest": settings.minimum_release_age = "14d" resolves "latest" to
+# mcp2cli 3.3.1, which declares an unbounded `mcp>=1.0` and so pulls mcp SDK 2.0.0.
+# 2.0.0 renamed Tool.inputSchema -> input_schema, which crashes 3.3.1 on every
+# --list (and breaks the OAuth flow for HTTP servers such as notion-personal).
+# 3.6.0 constrains `mcp<3,>=1.26` and works. Revert to "latest" once 3.6.0 clears
+# the 14d window (after 2026-09-02).
+"pipx:mcp2cli" = "3.6.0"
+"pipx:pyright" = "latest"
+
+"cargo:toon-format" = "latest"
+age = "latest"
+
+[settings]
+minimum_release_age = "14d"
+idiomatic_version_file_enable_tools = ["node"]
+experimental = true
