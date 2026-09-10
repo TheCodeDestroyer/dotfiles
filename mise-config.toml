@@ -37,6 +37,7 @@ rust = "latest"
 
 "cargo:toon-format" = "latest"
 age = "latest"
+"github:TheCodeDestroyer/nimrod" = "latest"
 
 [settings]
 minimum_release_age = "14d"
