@@ -1,8 +1,119 @@
 {
   "skills": {},
   "settings": {
+    "cleanupPeriodDays": 9999,
+    "model": null,
+    "effortLevel": "xhigh",
+    "modelSettings": {
+      "opus": {
+        "effortLevel": "high"
+      },
+      "fable": {
+        "effortLevel": "medium"
+      },
+      "claude-opus-5": null,
+      "claude-fable-5-1": null,
+      "claude-sonnet-5": null,
+      "claude-haiku-4-5": null
+    },
+    "tui": "fullscreen",
+    "autoMemoryEnabled": false,
+    "skipWorkflowUsageWarning": true,
+    "remoteControlAtStartup": false,
+    "agentPushNotifEnabled": true,
+    "permissions": {
+      "defaultMode": "auto",
+      "allow": [
+        "Bash(agent-browser:*)",
+        "Bash(archon:*)",
+        "Bash(bd:*)",
+        "Bash(cat:*)",
+        "Bash(find:*)",
+        "Bash(gh:*)",
+        "Bash(git:*)",
+        "Bash(graphiti:*)",
+        "Bash(grep:*)",
+        "Bash(jq:*)",
+        "Bash(ls:*)",
+        "Bash(mise:*)",
+        "Bash(mkdir:*)",
+        "Bash(obsidian:*)",
+        "Bash(rtk:*)",
+        "Bash(uvx mcp2cli:*)",
+        "Bash(vitrine:*)",
+        "LSP",
+        "Skill",
+        "WebSearch",
+        "mcp__plugin_context7-plugin_context7__*"
+      ],
+      "deny": [
+        "WebFetch(domain:github.com)",
+        "Bash(curl *github.com*)",
+        "Bash(wget *github.com*)",
+        "Bash(bd remember:*)",
+        "Bash(bd memories:*)"
+      ]
+    },
     "skillOverrides": {
       "build-dark-factory": "user-invocable-only"
+    },
+    "worktree": {
+      "bgIsolation": "worktree"
+    },
+    "statusLine": {
+      "type": "command",
+      "command": "bash \"$HOME/.claude/statusline.sh\""
+    },
+    "autoMode": {
+      "soft_deny": [
+        "$defaults",
+        "Bash(kubectl:* -n production)",
+        "Bash(kubectl:* -n staging)"
+      ]
+    },
+    "enabledPlugins": {
+      "frontend-design@claude-plugins-official": true,
+      "gideon@thecodedestroyer-plugins": true,
+      "skill-creator@claude-plugins-official": true,
+      "typescript-lsp@claude-plugins-official": true,
+      "pyright-lsp@claude-plugins-official": true,
+      "security-guidance@claude-plugins-official": true,
+      "context7@context7-marketplace": true,
+      "vitrine@spartan-plugins": true,
+      "convex@spartan-plugins": true,
+      "corvus@spartan-plugins": true,
+      "git@spartan-plugins": true,
+      "react@spartan-plugins": true,
+      "node@spartan-plugins": true
+    },
+    "extraKnownMarketplaces": {
+      "openai-codex": {
+        "source": {
+          "source": "github",
+          "repo": "openai/codex-plugin-cc"
+        }
+      },
+      "thecodedestroyer-plugins": {
+        "source": {
+          "source": "github",
+          "repo": "TheCodeDestroyer/claude-code-plugins"
+        }
+      },
+      "context7-marketplace": {
+        "source": {
+          "source": "github",
+          "repo": "upstash/context7"
+        }
+      },
+      "spartan-plugins": {
+        "source": {
+          "source": "github",
+          "repo": "spartandevelopment0/claude-code-plugins"
+        }
+      }
+    },
+    "env": {
+      "ANTHROPIC_MODEL": "opus[1m]"
     }
   }
 }
