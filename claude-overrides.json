@@ -28,7 +28,6 @@
         "Bash(archon:*)",
         "Bash(bd:*)",
         "Bash(cat:*)",
-        "Bash(find:*)",
         "Bash(gh:*)",
         "Bash(git:*)",
         "Bash(graphiti:*)",
@@ -67,8 +66,8 @@
     "autoMode": {
       "soft_deny": [
         "$defaults",
-        "Bash(kubectl:* -n production)",
-        "Bash(kubectl:* -n staging)"
+        "Bash(kubectl:*production*)",
+        "Bash(kubectl:*staging*)"
       ]
     },
     "enabledPlugins": {
