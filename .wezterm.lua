@@ -7,6 +7,13 @@ config.color_scheme = 'Catppuccin Mocha'
 config.use_fancy_tab_bar = false
 config.tab_max_width = 999   -- don't let the default cap truncate our padding
 
+-- Power: the 20240203 stable defaults to OpenGL, which macOS deprecated and
+-- runs less efficiently than Metal. WebGpu uses Metal; LowPower keeps it off
+-- any discrete GPU. Claude Code spinners redraw constantly, so cap the rate.
+config.front_end = 'WebGpu'
+config.webgpu_power_preference = 'LowPower'
+config.max_fps = 30
+
 wezterm.on('format-tab-title', function(tab, tabs, panes, conf, hover, max_width)
   -- full tab width in cells — unaffected by pane splits. pcall takes the
   -- method directly rather than wrapping it in a closure: this runs per tab
