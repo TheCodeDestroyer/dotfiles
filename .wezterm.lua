@@ -58,6 +58,14 @@ wezterm.on('format-tab-title', function(tab, tabs, panes, conf, hover, max_width
   return string.rep(' ', left) .. title .. string.rep(' ', right)
 end)
 
+-- Claude Code's fullscreen UI captures the mouse, so a drag makes a Claude
+-- Code selection, not a WezTerm one.
+local function is_claude_code(pane)
+  local info = pane:get_foreground_process_info()
+  local argv0 = info and info.argv and info.argv[1] or ''
+  return argv0:match('[^/]*$') == 'claude'
+end
+
 config.keys = {
   -- Cmd+C with no selection would copy "" and wipe the clipboard. Only copy
   -- when there is something selected; otherwise leave the clipboard alone.
@@ -68,6 +76,12 @@ config.keys = {
       local sel = window:get_selection_text_for_pane(pane)
       if sel and sel ~= '' then
         window:perform_action(act.CopyTo 'ClipboardAndPrimarySelection', pane)
+      elseif is_claude_code(pane) then
+        -- Pass it on as Super+C so Claude Code copies its own selection. Raw
+        -- kitty CSI u (99 = 'c', 9 = 1 + Super), because SendKey drops Super
+        -- and sends a plain "c". Only to Claude Code: another app could read
+        -- the sequence as typed text.
+        window:perform_action(act.SendString '\x1b[99;9u', pane)
       end
     end),
   },
