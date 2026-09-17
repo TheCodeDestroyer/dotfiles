@@ -192,6 +192,12 @@ TRACKED_BEADS_FILES = ("config.yaml", "metadata.json")
 # re-include the directory before anything in it can be tracked.
 TRACKED_BEADS_WORK = TRACKED_BEADS_FILES + ("hooks/",)
 
+# Runtime files bd writes NEXT TO .beads/, where `.beads/*` cannot reach them.
+# bd 1.3.0 added a gate lock at the repo root (.beads.gate.lock), and every
+# existing repo started showing it as untracked. The wildcard form is the one
+# `bd doctor` checks for, so a narrower pattern would still be reported missing.
+ROOT_IGNORES = ("*.gate.lock*",)
+
 
 def ignored_paths(root: Path, paths: list[str]) -> list[str]:
     """Which of `paths` .gitignore would ignore were they not already tracked.
@@ -250,26 +256,25 @@ def ensure_gitignore(root: Path, tracked: tuple[str, ...]) -> None:
     """
     gi = root / ".gitignore"
     lines = gi.read_text().splitlines() if gi.exists() else []
-    has_ignore = ".beads/*" in lines
-    missing = [f"!.beads/{name}" for name in tracked
-               if f"!.beads/{name}" not in lines]
-    if has_ignore and not missing:
+    required = [".beads/*", *(f"!.beads/{name}" for name in tracked),
+                *ROOT_IGNORES]
+    missing = [ln for ln in required if ln not in lines]
+    if not missing:
         return
 
     listing = ", ".join(tracked)
     additions: list[str] = []
-    if not has_ignore:
+    if ".beads/*" in missing:
         additions += [
             "",
             f"# Beads: track only {listing}; "
-            "ignore db/runtime/connection env",
-            ".beads/*",
+            "ignore db/runtime/connection env and root locks",
         ]
     additions += missing
 
     # Drop the leading separator blank when the file is empty or already ends
     # in a blank line.
-    if additions and additions[0] == "" and (not lines or lines[-1] == ""):
+    if additions[0] == "" and (not lines or lines[-1] == ""):
         additions = additions[1:]
 
     # write_text follows a symlink, and a clone may legitimately ship
@@ -284,7 +289,7 @@ def ensure_gitignore(root: Path, tracked: tuple[str, ...]) -> None:
 
     text = "\n".join(lines + additions).rstrip("\n") + "\n"
     gi.write_text(text)
-    print(f"bdi: updated {gi} (track {listing})")
+    print(f"bdi: updated {gi} (added {', '.join(missing)})")
 
 
 def track_beads_files(root: Path, tracked: tuple[str, ...]) -> None:
@@ -301,7 +306,8 @@ def track_beads_files(root: Path, tracked: tuple[str, ...]) -> None:
 
 def gitignore_plan_line(tracked: tuple[str, ...]) -> str:
     """The .gitignore row of a --dry-run plan, for either profile."""
-    return f"ensure '.beads/*' + keep {', '.join(tracked)}"
+    return (f"ensure '.beads/*' + {', '.join(ROOT_IGNORES)} "
+            f"+ keep {', '.join(tracked)}")
 
 
 # --------------------------------------------------------------------------- #
