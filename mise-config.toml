@@ -44,3 +44,6 @@ age = "latest"
 minimum_release_age = "14d"
 idiomatic_version_file_enable_tools = ["node"]
 experimental = true
+# Private GitHub releases (nimrod) 404 without a token. gh keeps its token in the
+# keychain, so gh_cli_tokens (which reads hosts.yml) finds nothing; ask gh directly.
+github.credential_command = "/opt/homebrew/bin/gh auth token"
