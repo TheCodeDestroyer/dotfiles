@@ -32,6 +32,11 @@ rust = "latest"
 # --list (and breaks the OAuth flow for HTTP servers such as notion-personal).
 # 3.6.0 constrains `mcp<3,>=1.26` and works. Revert to "latest" once 3.6.0 clears
 # the 14d window (after 2026-09-02).
+# Known issue (verified 2026-09-22 against 3.6.0 / mcp 2.0.0): a fresh OAuth login
+# to Notion fails with "Client must not use multiple authentication methods". The
+# SDK sends client_secret_basic AND client_id in the body. Workaround: after the
+# first failed attempt, set "token_endpoint_auth_method": "client_secret_post" in
+# ~/.cache/mcp2cli/oauth/<hash>/client.json and retry.
 "pipx:mcp2cli" = "3.6.0"
 "pipx:pyright" = "latest"
 
