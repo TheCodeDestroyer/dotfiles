@@ -88,6 +88,16 @@ format_tokens() {
 # Model
 model_seg="${BOLD}${CYAN}${model}${RESET}"
 [ -n "$effort" ] && model_seg+=" ${LIGHT_GRAY}[${effort}]${RESET}"
+# Profile tag for a non-default config dir (~/.claude-work -> [work])
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+config_dir="${config_dir/#\~/$HOME}"
+config_dir="${config_dir%/}"
+if [ "$config_dir" != "$HOME/.claude" ]; then
+  profile="${config_dir##*/}"
+  profile="${profile#.claude-}"
+  profile="${profile#.}"
+  model_seg+=" ${BOLD}${BRIGHT_MAGENTA}[${profile}]${RESET}"
+fi
 if [ -n "$session_id" ]; then
   marker="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gideon/markers/${session_id}.jsonl"
   [ -f "$marker" ] && model_seg+=" 💎"
