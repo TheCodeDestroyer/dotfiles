@@ -15,6 +15,7 @@ It then applies claude-overrides.json: the `skills` section re-patches SKILL.md
 frontmatter, which `skills update` overwrites with upstream whenever upstream
 moves that skill, and the `settings` section merges keys into each config
 home's settings.json (lists union, null deletes, machine-local keys survive),
+the `seed` section writes settings.json keys only where a home lacks them,
 and the `config` section merges the same way into each home's global config
 (.claude.json). `--overrides-only` runs those steps alone; `--dry-run` previews
 them without writing.
@@ -122,8 +123,12 @@ def update_root(root):
 #
 #   skills   -> SKILL.md frontmatter in AGENT_SKILLS_DIR
 #   settings -> keys merged into each config root's settings.json:
-#               permissions, model, worktree, statusLine, enabledPlugins,
-#               extraKnownMarketplaces, skillOverrides, ...
+#               permissions, model, worktree, statusLine, skillOverrides, ...
+#   seed     -> top-level settings.json keys written only when the root lacks
+#               the key, then never touched again: enabledPlugins and
+#               extraKnownMarketplaces. A fresh root starts with the full set;
+#               after that each root installs/enables plugins on its own (the
+#               work root deliberately runs a different plugin set).
 #   config   -> keys merged into each config root's global config (.claude.json):
 #               the /config toggles Claude Code reads only from there, such as
 #               copyOnSelect. A copy in settings.json is silently ignored.
@@ -143,8 +148,8 @@ def update_root(root):
 # The skills and settings targets are NOT the same problem. Skill frontmatter needs
 # re-applying because `skills update` overwrites the file; settings.json is
 # never rewritten by an update, so a settings section would exist purely to
-# version the config and seed a fresh machine, and would have to MERGE (not
-# replace) so machine-local keys survive.
+# version the config, and would have to MERGE (not replace) so machine-local
+# keys survive.
 #
 # -- skills section ---------------------------------------------------------
 # `skills update` re-fetches SKILL.md from upstream, so any local frontmatter
@@ -337,13 +342,18 @@ def merge_settings(current, desired, path=""):
     return merged, changes
 
 
+def settings_file(root):
+    return os.path.join(root, "settings.json")
+
+
 def global_config_file(root):
     if os.path.realpath(root) == os.path.realpath(DEFAULT_ROOT):
         return os.path.expanduser("~/.claude.json")
     return os.path.join(root, ".claude.json")
 
 
-def merge_json_overrides(section, target_for, desired, dry_run=False):
+def merge_json_overrides(section, target_for, desired, dry_run=False,
+                         only_missing=False):
     print(f"\nApplying {section} overrides...")
     if not desired:
         print(f"  no {section} section, skipping")
@@ -360,7 +370,11 @@ def merge_json_overrides(section, target_for, desired, dry_run=False):
             print(f"  {target}: unreadable, skipping ({exc})")
             continue
 
-        merged, changes = merge_settings(current, desired)
+        # Seed: a top-level key the target already has is left alone entirely,
+        # so the root owns it from the first write on.
+        want = ({k: v for k, v in desired.items() if k not in current}
+                if only_missing else desired)
+        merged, changes = merge_settings(current, want)
         for mark, where, value in changes:
             print(f"  {mark} {where}{': ' + value if value else ''}")
         if not changes:
@@ -416,8 +430,9 @@ def apply_skill_overrides(cfg, dry_run=False):
 # load_override_doc all come from this one mapping.
 OVERRIDE_SECTIONS = {
     "skills": apply_skill_overrides,
-    "settings": partial(merge_json_overrides, "settings",
-                        lambda root: os.path.join(root, "settings.json")),
+    "settings": partial(merge_json_overrides, "settings", settings_file),
+    "seed": partial(merge_json_overrides, "seed", settings_file,
+                    only_missing=True),
     "config": partial(merge_json_overrides, "config", global_config_file),
 }
 
@@ -435,7 +450,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--overrides-only", action="store_true",
-                    help="re-apply overrides only (skills, settings, config), "
+                    help=f"re-apply overrides only ({', '.join(OVERRIDE_SECTIONS)}), "
                          "skipping every marketplace, plugin and skill update")
     ap.add_argument("--dry-run", action="store_true",
                     help="preview override changes without writing them")
