@@ -36,7 +36,9 @@ any other personal infrastructure. The database is per-repo and embedded in
      without this every later bd call disagrees with metadata.json
   3. bd dolt commit — pushes the schema to the git remote when it is reachable
   4. .gitignore hygiene, then amend bd init's own commit with the cleanup
-     while it is unpushed (as in --personal step 5)
+     while it is unpushed (as in --personal step 5). bd's hooks stay tracked
+     only when they run (bd kept core.hooksPath) and have an origin to sync
+     over; its *.backup copies of replaced hooks never do
 
 There is no default profile. A repo initialized into the wrong one quietly sends
 work issues to a personal server, or personal issues to a work remote, so `bdi`
@@ -193,8 +195,15 @@ TRACKED_BEADS_FILES = ("config.yaml", "metadata.json")
 # data on push and merge, so a clone without them silently stops syncing. The
 # trailing slash is load-bearing — `.beads/*` excludes the directory itself,
 # and git will not look inside an excluded directory, so the negation has to
-# re-include the directory before anything in it can be tracked.
-TRACKED_BEADS_WORK = TRACKED_BEADS_FILES + ("hooks/",)
+# re-include the directory before anything in it can be tracked. Only when the
+# hooks earn it, though (see work_keep_list).
+BEADS_HOOKS_DIR = "hooks/"
+TRACKED_BEADS_WORK = TRACKED_BEADS_FILES + (BEADS_HOOKS_DIR,)
+
+# bd init saves each hook it replaces as <name>.backup and chains to it. Those
+# are another manager's per-machine shims — lefthook's call its binary by the
+# absolute install path, home directory and all — so they never get tracked.
+HOOK_BACKUPS_IGNORE = ".beads/hooks/*.backup"
 
 # Runtime files bd writes NEXT TO .beads/, where `.beads/*` cannot reach them.
 # bd 1.3.0 added a gate lock at the repo root (.beads.gate.lock), and every
@@ -250,18 +259,23 @@ def untrack_ignored_beads(root: Path) -> None:
         print(f"bdi: untracked {', '.join(stale)}")
 
 
+def gitignore_rules(tracked: tuple[str, ...]) -> list[str]:
+    """The .gitignore lines a keep-list needs, in the order they are written."""
+    backups = [HOOK_BACKUPS_IGNORE] if BEADS_HOOKS_DIR in tracked else []
+    return [".beads/*", *(f"!.beads/{name}" for name in tracked),
+            *backups, *ROOT_IGNORES]
+
+
 def ensure_gitignore(root: Path, tracked: tuple[str, ...]) -> None:
     """Idempotently ignore .beads/ runtime, keeping the tracked files tracked.
 
     `tracked` is the profile's keep-list: central repos need only the config
-    and identity, work repos also need bd's hooks (TRACKED_BEADS_WORK). No
+    and identity, work repos may also need bd's hooks (TRACKED_BEADS_WORK). No
     default — a profile that keeps the wrong set fails silently.
     """
     gi = root / ".gitignore"
     lines = gi.read_text().splitlines() if gi.exists() else []
-    required = [".beads/*", *(f"!.beads/{name}" for name in tracked),
-                *ROOT_IGNORES]
-    missing = [ln for ln in required if ln not in lines]
+    missing = [ln for ln in gitignore_rules(tracked) if ln not in lines]
     if not missing:
         return
 
@@ -391,8 +405,7 @@ COMMIT_PLAN_LINE = ("amend bd init's commit with the cleanup when unpushed, "
 
 def gitignore_plan_line(tracked: tuple[str, ...]) -> str:
     """The .gitignore row of a --dry-run plan, for either profile."""
-    return (f"ensure '.beads/*' + {', '.join(ROOT_IGNORES)} "
-            f"+ keep {', '.join(tracked)}")
+    return "ensure " + ", ".join(gitignore_rules(tracked))
 
 
 # --------------------------------------------------------------------------- #
@@ -656,7 +669,13 @@ def hook_owner(root: Path) -> tuple[str | None, list[str]]:
     return prior, found
 
 
-def restore_hooks_path(root: Path, prior: str | None, managers: list[str]) -> None:
+def is_beads_hooks(root: Path, hooks_path: str | None) -> bool:
+    """Whether a core.hooksPath value points at .beads/hooks, i.e. bd's hooks."""
+    return bool(hooks_path) and (
+        (root / hooks_path).resolve() == (root / ".beads" / "hooks").resolve())
+
+
+def restore_hooks_path(root: Path, prior: str | None, managers: list[str]) -> bool:
     """Give the hook path back after bd init took it over.
 
     "Changed from what we saw before init" is the whole test — no assumption
@@ -664,10 +683,12 @@ def restore_hooks_path(root: Path, prior: str | None, managers: list[str]) -> No
     for husky, which owns core.hooksPath itself. Losing bd's hooks costs
     automatic hydration on merge/checkout, not sync: writes still push via
     dolt.auto-push, and `bd dolt pull` re-hydrates after a git pull.
+
+    Returns whether git still runs bd's hooks afterwards.
     """
     current = git_out(root, "config", "--get", "core.hooksPath")
     if current == prior or not (prior or managers):
-        return
+        return is_beads_hooks(root, current)
     if prior:
         run(["git", "-C", str(root), "config", "core.hooksPath", prior])
         action = f"restored core.hooksPath to {prior}"
@@ -679,6 +700,18 @@ def restore_hooks_path(root: Path, prior: str | None, managers: list[str]) -> No
           f"pointed the hook path at {current}, disabling them. Beads still "
           "syncs on write via dolt.auto-push; run `bd dolt pull` after a git "
           "pull to hydrate.")
+    return False
+
+
+def work_keep_list(remote: str | None, owns_hooks: bool) -> tuple[str, ...]:
+    """The .beads/ keep-list for a work repo.
+
+    The hooks exist to move issue data over the git remote on push, merge and
+    checkout. With no origin there is nothing to move, and when the repo's own
+    hook manager keeps core.hooksPath (restore_hooks_path) git never calls them
+    — tracked either way they would be dead files.
+    """
+    return TRACKED_BEADS_WORK if remote and owns_hooks else TRACKED_BEADS_FILES
 
 
 def effective_config(root: Path, key: str) -> str | None:
@@ -721,8 +754,12 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
 
     if dry_run:
         env_note = "  [" + " ".join(f"{k}={v}" for k, v in EMBEDDED_OVERRIDES.items()) + "]"
-        hooks_line = (f"keep {', '.join(managers)} (restore bd's core.hooksPath)"
-                      if managers or prior_hooks else "bd hooks via core.hooksPath")
+        # restore_hooks_path's guard, predicted: a prior hook path that is
+        # already bd's (a resume) stays, as does bd's when nothing else ran.
+        bd_hooks = is_beads_hooks(root_path, prior_hooks) or not (
+            managers or prior_hooks)
+        hooks_line = ("bd hooks via core.hooksPath" if bd_hooks else
+                      f"keep {', '.join(managers)} (restore bd's core.hooksPath)")
         print_plan([
             ("profile", f"work (embedded Dolt in {EMBEDDED_DB_DIR}/)"),
             ("database", db),
@@ -730,7 +767,7 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
             ("sync.remote", remote or "none (no git origin) — issues stay local"),
             ("config.yaml", "dolt.shared-server: false"),
             ("hooks", hooks_line),
-            (".gitignore", gitignore_plan_line(TRACKED_BEADS_WORK)),
+            (".gitignore", gitignore_plan_line(work_keep_list(remote, bd_hooks))),
             ("then", "bd dolt commit"),
             ("commit", COMMIT_PLAN_LINE),
         ])
@@ -772,14 +809,14 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
                     "land in ~/.beads/shared-server, not in the repo)")
 
     # 4. Keep the repo's own hooks working (bd init hijacks core.hooksPath).
-    restore_hooks_path(root_path, prior_hooks, managers)
+    bd_hooks = restore_hooks_path(root_path, prior_hooks, managers)
 
     # 5. Commit the initial schema. No --sandbox here: unlike central repos, the
     #    push IS the sync — it writes refs/dolt/data on the repo's git remote.
     run(["bd", "dolt", "commit"], env=env)
 
     # 6. Track the parts of .beads/ a clone needs, and only those.
-    track_beads_files(root_path, TRACKED_BEADS_WORK)
+    track_beads_files(root_path, work_keep_list(remote, bd_hooks))
 
     print(f"bdi: {db} ready (embedded)"
           + (f", syncing over {remote}" if remote else ", local-only (no origin)"))
