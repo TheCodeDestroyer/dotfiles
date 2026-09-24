@@ -13,8 +13,10 @@ over Tailscale). Issues live off-machine, never on the repo's git remote:
   4. correct config.yaml (no auto-push, no export git-add, and above all no
      sync.remote — bd init aims that at the repo's own git remote regardless
      of profile), bd dolt commit (commit the initial schema), + .gitignore
-     hygiene (which also untracks the .beads/ runtime files `bd init` may
-     have committed)
+     hygiene (which also untracks the .beads/ runtime files `bd init`
+     committed)
+  5. amend bd init's own commit with that cleanup while it is unpushed, so
+     the repo ends on one clean commit
 
 The central connection is read from ~/.config/beads/central.conf
 (BEADS_DOLT_SERVER_HOST/PORT/USER + BEADS_DOLT_PASSWORD/TLS; env vars override).
@@ -33,6 +35,8 @@ any other personal infrastructure. The database is per-repo and embedded in
      ~/.config/bd/config.yaml turns the shared server ON machine-wide, so
      without this every later bd call disagrees with metadata.json
   3. bd dolt commit — pushes the schema to the git remote when it is reachable
+  4. .gitignore hygiene, then amend bd init's own commit with the cleanup
+     while it is unpushed (as in --personal step 5)
 
 There is no default profile. A repo initialized into the wrong one quietly sends
 work issues to a personal server, or personal issues to a work remote, so `bdi`
@@ -134,10 +138,10 @@ EMBEDDED_DB_DIR = ".beads/embeddeddolt"
 def orphaned_database(root: Path) -> str | None:
     """An embedded database this repo no longer has the identity for, or None.
 
-    metadata.json is tracked, the database directory is not, and `bd init`
-    only STAGES its initial commit — so discarding local changes before that
-    commit lands deletes the repo's beads identity and leaves the database
-    behind. In that state `bd init` refuses ("already initialized") while bdi,
+    metadata.json is tracked, the database directory is not, and when `bd
+    init`'s own commit fails it leaves .beads/ only staged — so discarding
+    local changes before that commit lands deletes the repo's beads identity
+    and leaves the database behind. In that state `bd init` refuses ("already initialized") while bdi,
     reading no metadata, still thinks the repo is fresh: the run dies on bd's
     message with nothing to act on.
 
@@ -229,8 +233,7 @@ def untrack_ignored_beads(root: Path) -> None:
     hooks travel with the clone — but "the parts a clone needs", not the whole
     directory bd init staged.
 
-    Staged, not committed: bdi does not make commits in this profile, and which
-    commit these deletions belong in is the user's call.
+    Staged here; commit_cleanup decides which commit they land in.
 
     --force because plain `git rm --cached` refuses any file whose staged
     content differs from both the worktree and HEAD — and then drops the whole
@@ -244,7 +247,7 @@ def untrack_ignored_beads(root: Path) -> None:
         return
     if run(["git", "-C", str(root), "rm", "--cached", "--force", "--quiet",
             "--", *stale]) == 0:
-        print(f"bdi: untracked {', '.join(stale)} — staged, commit to apply")
+        print(f"bdi: untracked {', '.join(stale)}")
 
 
 def ensure_gitignore(root: Path, tracked: tuple[str, ...]) -> None:
@@ -299,9 +302,91 @@ def track_beads_files(root: Path, tracked: tuple[str, ...]) -> None:
     included — a per-machine, append-only log that would re-diff on every bd
     write for the life of the repo. The ignore rule only lands here, after
     that, so the over-tracked paths need staging away by hand.
+
+    Then stages the keep-list and .gitignore by name, never `git add .beads`:
+    when .gitignore could not be written (a symlink), that would stage the
+    connection env file and its password.
     """
     ensure_gitignore(root, tracked)
     untrack_ignored_beads(root)
+    paths = [".gitignore", *(f".beads/{name.rstrip('/')}" for name in tracked)]
+    present = [p for p in paths if (root / p).exists()]
+    if present:
+        run(["git", "-C", str(root), "add", "--", *present])
+
+
+# The subject `bd init` (1.3.0) gives the commit it makes on its own, in both
+# profiles. A commit with any other subject is not bdi's to amend.
+BD_INIT_SUBJECT = "bd init: initialize beads issue tracking"
+
+
+def commit_cleanup(root: Path) -> None:
+    """Fold bdi's staged cleanup into bd init's own commit, then report.
+
+    `bd init` commits .beads/ before bdi gets to run, so without this the repo
+    ends on a commit that still carries what bdi removes (runtime files, and in
+    central repos sync.remote) with the fix staged on top.
+
+    Amends only when HEAD is bd's init commit, no remote-tracking ref contains
+    it (nothing published gets rewritten), and nothing outside .beads/ and
+    .gitignore is staged (the user's own work stays out of it). Otherwise the
+    cleanup stays staged and report_uncommitted says what is left.
+    """
+    if amend_init_commit(root):
+        print("bdi: folded the cleanup into bd init's commit")
+    report_uncommitted(root)
+
+
+def amend_init_commit(root: Path) -> bool:
+    """Amend HEAD with the staged cleanup when commit_cleanup's rules allow it."""
+    staged = (git_out(root, "diff", "--cached", "--name-only") or "").splitlines()
+    if not staged:
+        return False
+    if any(p != ".gitignore" and not p.startswith(".beads/") for p in staged):
+        return False
+    if git_out(root, "log", "-1", "--format=%s") != BD_INIT_SUBJECT:
+        return False
+    if git_out(root, "for-each-ref", "--contains", "HEAD", "refs/remotes"):
+        return False
+    return run(["git", "-C", str(root), "commit", "--amend", "--no-edit",
+                "--quiet"]) == 0
+
+
+def report_uncommitted(root: Path) -> None:
+    """Say whether .beads/ actually landed in a commit, and why it may not have.
+
+    `bd init` makes the initial .beads/ commit itself but downgrades a failure
+    to `Warning: failed to commit beads files` and still exits 0 — so a
+    rejecting hook, or a signing key git cannot use, leaves the files staged
+    while every success message still prints. Left there, the next `git
+    checkout`/`reset` discards the repo's identity (see orphaned_database).
+    """
+    out = git_out(root, "status", "--porcelain", "--", ".beads", ".gitignore")
+    pending = [ln[3:] for ln in (out or "").splitlines()]
+    if not pending:
+        print("bdi: .beads/ is committed — config and identity travel with the repo")
+        return
+    shown = ", ".join(pending[:4]) + (", …" if len(pending) > 4 else "")
+
+    # Pending work here means commit_cleanup did not amend. What separates the
+    # allowed skip from a failure is whether HEAD carries .beads/ at all —
+    # nothing there means bd's commit did not happen. An
+    # unborn HEAD is neither: there is no commit to have failed.
+    unborn = git_out(root, "rev-parse", "--verify", "--quiet", "HEAD") is None
+    if unborn or git_out(root, "ls-tree", "--name-only", "HEAD", "--", ".beads"):
+        print(f"bdi: commit .beads/ and .gitignore ({shown})")
+        return
+    warn(f"HEAD carries no .beads/ — `bd init`'s own commit did not happen, and "
+         f"it reports that as a warning while still exiting 0. {len(pending)} "
+         f"path(s) are staged instead ({shown}); committing them by hand will "
+         "fail the same way until the cause is fixed (a rejecting hook, or "
+         "commit.gpgsign set with no usable user.signingkey in this repo). "
+         "Until it lands, a checkout or reset discards the repo's beads "
+         "identity and leaves the database orphaned.")
+
+
+COMMIT_PLAN_LINE = ("amend bd init's commit with the cleanup when unpushed, "
+                    "else leave it staged")
 
 
 def gitignore_plan_line(tracked: tuple[str, ...]) -> str:
@@ -453,7 +538,8 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
             ("then", "bd dolt commit"),
             (".gitignore", gitignore_plan_line(TRACKED_BEADS_FILES)),
             ("untrack", "git rm --cached the ignored .beads/ files bd init "
-                        "committed (staged, not committed)"),
+                        "committed"),
+            ("commit", COMMIT_PLAN_LINE),
         ])
         return 0
 
@@ -492,6 +578,7 @@ def central_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool
     track_beads_files(root_path, TRACKED_BEADS_FILES)
 
     print(f"bdi: {db} ready on central server {server}")
+    commit_cleanup(root_path)
     return 0
 
 
@@ -609,39 +696,6 @@ def effective_config(root: Path, key: str) -> str | None:
     return None if out is None or out.startswith(f"{key} (not set") else out
 
 
-def report_uncommitted(root: Path) -> None:
-    """Say whether .beads/ actually landed in a commit, and why it may not have.
-
-    `bd init` makes the initial .beads/ commit itself but downgrades a failure
-    to `Warning: failed to commit beads files` and still exits 0 — so a
-    rejecting hook, or a signing key git cannot use, leaves the files staged
-    while every success message still prints. Left there, the next `git
-    checkout`/`reset` discards the repo's identity (see orphaned_database).
-    """
-    out = git_out(root, "status", "--porcelain", "--", ".beads", ".gitignore")
-    pending = [ln[3:] for ln in (out or "").splitlines()]
-    if not pending:
-        print("bdi: .beads/ is committed — config and hooks travel with the repo")
-        return
-    shown = ", ".join(pending[:4]) + (", …" if len(pending) > 4 else "")
-
-    # bdi rewrites .gitignore and stages the untracking AFTER bd's own commit,
-    # so pending work is the normal ending. What separates it from a failure is
-    # whether HEAD carries .beads/ at all — nothing there means bd's commit did
-    # not happen. An unborn HEAD is neither: there is no commit to have failed.
-    unborn = git_out(root, "rev-parse", "--verify", "--quiet", "HEAD") is None
-    if unborn or git_out(root, "ls-tree", "--name-only", "HEAD", "--", ".beads"):
-        print(f"bdi: commit .beads/ and .gitignore ({shown})")
-        return
-    warn(f"HEAD carries no .beads/ — `bd init`'s own commit did not happen, and "
-         f"it reports that as a warning while still exiting 0. {len(pending)} "
-         f"path(s) are staged instead ({shown}); committing them by hand will "
-         "fail the same way until the cause is fixed (a rejecting hook, or "
-         "commit.gpgsign set with no usable user.signingkey in this repo). "
-         "Until it lands, a checkout or reset discards the repo's beads "
-         "identity and leaves the database orphaned.")
-
-
 def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: bool,
                   resuming: bool) -> int:
     if not resuming and (orphan := orphaned_database(root_path)):
@@ -678,6 +732,7 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
             ("hooks", hooks_line),
             (".gitignore", gitignore_plan_line(TRACKED_BEADS_WORK)),
             ("then", "bd dolt commit"),
+            ("commit", COMMIT_PLAN_LINE),
         ])
         return 0
 
@@ -728,7 +783,7 @@ def embedded_main(root_path: Path, db: str, passthrough: list[str], dry_run: boo
 
     print(f"bdi: {db} ready (embedded)"
           + (f", syncing over {remote}" if remote else ", local-only (no origin)"))
-    report_uncommitted(root_path)
+    commit_cleanup(root_path)
     return 0
 
 
