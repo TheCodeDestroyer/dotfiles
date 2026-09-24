@@ -83,15 +83,17 @@ format_tokens() {
   fi
 }
 
+# Claude config dir, with ~ expanded and no trailing slash
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+config_dir="${config_dir/#\~/$HOME}"
+config_dir="${config_dir%/}"
+
 # ── Build segments ──
 
 # Model
 model_seg="${BOLD}${CYAN}${model}${RESET}"
 [ -n "$effort" ] && model_seg+=" ${LIGHT_GRAY}[${effort}]${RESET}"
 # Profile tag for a non-default config dir (~/.claude-work -> [work])
-config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-config_dir="${config_dir/#\~/$HOME}"
-config_dir="${config_dir%/}"
 if [ "$config_dir" != "$HOME/.claude" ]; then
   profile="${config_dir##*/}"
   profile="${profile#.claude-}"
@@ -99,7 +101,7 @@ if [ "$config_dir" != "$HOME/.claude" ]; then
   model_seg+=" ${BOLD}${BRIGHT_MAGENTA}[${profile}]${RESET}"
 fi
 if [ -n "$session_id" ]; then
-  marker="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gideon/markers/${session_id}.jsonl"
+  marker="$config_dir/gideon/markers/${session_id}.jsonl"
   [ -f "$marker" ] && model_seg+=" 💎"
 fi
 add $L_MODEL "$model_seg"
@@ -197,7 +199,7 @@ add $L_REPLY "$reply_seg"
 
 # Current task
 task_seg=""
-todos_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/todos"
+todos_dir="$config_dir/todos"
 if [ -n "$session_id" ] && [ -d "$todos_dir" ]; then
   latest=$(ls -t "$todos_dir"/${session_id}-agent-*.json 2>/dev/null | head -1)
   if [ -n "$latest" ]; then
