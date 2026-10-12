@@ -1,0 +1,3 @@
+# pnpm global config (npm does not read this file)
+# Packages must be at least 14 days old (value is in minutes)
+minimum-release-age=20160

@@ -45,6 +45,12 @@ link ~/bin/.zshrc ~/.zshrc
 link ~/bin/.zshenv ~/.zshenv
 link ~/bin/.zshfn ~/.zshfn
 [ ! -f ~/.npmrc ] && cp ~/bin/.npmrc.template ~/.npmrc && echo "Created .npmrc from template"
+# pnpm keeps its global rc in a different place per OS
+if [[ $(uname -s) = "Darwin" ]]; then
+    link ~/bin/pnpm-rc ~/Library/Preferences/pnpm/rc
+else
+    link ~/bin/pnpm-rc "${XDG_CONFIG_HOME:-$HOME/.config}/pnpm/rc"
+fi
 link ~/bin/sheldon.toml ~/.config/sheldon/plugins.toml
 link ~/bin/starship.toml ~/.config/starship.toml
 link ~/bin/mise-config.toml ~/.config/mise/config.toml
