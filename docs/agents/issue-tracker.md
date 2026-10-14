@@ -1,3 +1,9 @@
+---
+tracker: clickup
+clickup-account: zelogic
+clickup-lists: 901223321732
+---
+
 # Issue tracker: ClickUp
 
 Issues and specs for this repo are ClickUp tasks in workspace **Zelogic**, space **Dev Tools** (`901210937944`), list **Bin** (`901223321732`).
