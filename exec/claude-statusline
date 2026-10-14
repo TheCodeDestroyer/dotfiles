@@ -94,8 +94,9 @@ config_dir="${config_dir%/}"
 model_seg="${BOLD}${CYAN}${model}${RESET}"
 [ -n "$effort" ] && model_seg+=" ${LIGHT_GRAY}[${effort}]${RESET}"
 if [ -n "$session_id" ]; then
-  marker="$config_dir/gideon/markers/${session_id}.jsonl"
-  [ -f "$marker" ] && model_seg+=" 💎"
+  marker_stem="$config_dir/gideon/markers/${session_id}"
+  # An opt-out (/unmark-valuable-session) sits beside the mark and wins over it.
+  [ -f "$marker_stem.jsonl" ] && [ ! -f "$marker_stem.optout" ] && model_seg+=" 💎"
 fi
 add $L_MODEL "$model_seg"
 
