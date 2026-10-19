@@ -67,11 +67,67 @@ def list_plugins(root):
     }
 
 
+def install_missing(root):
+    """Add the marketplaces and install the plugins settings.json names but the
+    root lacks. A fresh machine gets both lists from the `seed` section, so run
+    `claude-update --overrides-only` once before the first full run there."""
+    try:
+        with open(settings_file(root)) as f:
+            settings = json.load(f)
+    except (OSError, ValueError):
+        return
+
+    rc, out, _ = sh(["claude", "plugin", "marketplace", "list", "--json"], root=root)
+    try:
+        have = {m.get("name") for m in json.loads(out)} if rc == 0 else set()
+    except ValueError:
+        have = set()
+    for name, entry in sorted((settings.get("extraKnownMarketplaces") or {}).items()):
+        src = entry.get("source") or {}
+        if name in have or src.get("source") != "github":
+            continue
+        rc, _, err = sh(["claude", "plugin", "marketplace", "add", src["repo"]], root=root)
+        print(f"  Added marketplace {name}" if rc == 0
+              else f"  Marketplace {name} failed: {err.strip() or rc}")
+
+    installed = list_plugins(root)
+    for pid in sorted(settings.get("enabledPlugins") or {}):
+        if pid in installed:
+            continue
+        rc, _, err = sh(["claude", "plugin", "install", pid, "--scope", "user"],
+                        root=root, timeout=300)
+        print(f"  Installed {pid}" if rc == 0
+              else f"  Install {pid} failed: {err.strip() or rc}")
+
+
+def install_missing_skills():
+    """Install the skills the lock lists but ~/.agents/skills lacks. bin-update
+    links the lock from the dotfiles, so a new machine starts with the full set."""
+    lock = os.path.expanduser("~/.agents/.skill-lock.json")
+    try:
+        with open(lock) as f:
+            skills = json.load(f).get("skills") or {}
+    except (OSError, ValueError):
+        return
+    for name, entry in sorted(skills.items()):
+        if os.path.isdir(os.path.join(SKILLS_DIR, name)):
+            continue
+        rc = subprocess.run(
+            ["npx", "--yes", "skills", "add", entry["source"], "-g",
+             "-s", name, "-a", "claude-code", "-y"],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=300,
+        ).returncode
+        print(f"  Installed skill {name}" if rc == 0
+              else f"  Install skill {name} failed: rc={rc}")
+
+
 def update_root(root):
     print(f"\n=== {root} ===")
     if not os.path.isdir(root):
         print("  (no such config home, skipping)")
         return
+
+    install_missing(root)
 
     print("  Refreshing marketplaces...")
     rc, _, err = sh(["claude", "plugin", "marketplace", "update"], root=root)
@@ -471,6 +527,7 @@ def main():
             update_root(root)
 
     print("\nUpdating skills...")
+    install_missing_skills()
     try:
         rc = subprocess.run(
             ["npx", "--yes", "skills", "update", "-g"],

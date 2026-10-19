@@ -1,0 +1,114 @@
+{
+  "$schema": "https://raw.githubusercontent.com/TheCodeDestroyer/claude-persona/main/personas.schema.json",
+  "default": "dev",
+  "personas": {
+    "dev": {
+      "description": "coding in a repo",
+      "instructions": "This session is for writing and reviewing code. For browser checks use agent-browser.",
+      "color": "cyan",
+      "mcp": {
+        "allow": ["plugin:context7:context7", "claude.ai Claude Docs"]
+      },
+      "skills": {
+        "deny": [
+          "anthropic-skills:*",
+          "cowork-plugin-management:*",
+          "claude-in-chrome",
+          "frontend-design:*",
+          "vitrine:*",
+          "color-expert",
+          "figma"
+        ],
+        "quiet": ["gideon:mark-valuable-session"]
+      }
+    },
+    "design": {
+      "description": "UI and visual design: options, prototypes, comparisons",
+      "instructions": "This session is for UI and visual design. Make several options as prototypes or vitrine proposals and compare them before building one. Use agent-browser to look at the running app and take screenshots.",
+      "color": "yellow",
+      "mcp": {
+        "allow": ["plugin:context7:context7"]
+      },
+      "skills": {
+        "allow": [
+          "frontend-design:frontend-design",
+          "vitrine:vitrine",
+          "color-expert",
+          "figma",
+          "prototype",
+          "artifact-design",
+          "artifact-capabilities",
+          "artifact-diagramming",
+          "dataviz",
+          "agent-browser",
+          "react:patterns",
+          "persona:setup"
+        ],
+        "quiet": ["gideon:mark-valuable-session"]
+      },
+      "agents": {
+        "allow": ["general-purpose", "Explore"]
+      }
+    },
+    "brainstorm": {
+      "description": "ideas, planning and writing docs, no code edits",
+      "instructions": "This session is for thinking through ideas and writing plans or documents. Do not edit code unless asked.",
+      "color": "magenta",
+      "mcp": {
+        "allow": ["claude.ai Claude Docs"]
+      },
+      "skills": {
+        "allow": [
+          "grilling",
+          "research",
+          "domain-modeling",
+          "codebase-design",
+          "roast",
+          "gideon:gideon",
+          "artifact-design",
+          "artifact-capabilities",
+          "artifact-diagramming",
+          "anthropic-skills:docs",
+          "anthropic-skills:docx",
+          "anthropic-skills:pdf",
+          "anthropic-skills:deep-research",
+          "persona:setup"
+        ],
+        "quiet": ["gideon:mark-valuable-session"]
+      },
+      "agents": {
+        "allow": ["general-purpose", "Explore", "Plan"]
+      }
+    },
+    "qa": {
+      "description": "testing a running app in the browser",
+      "instructions": "This session is for testing a running app. Use agent-browser only, no other browser tools. For each issue record the URL, steps, expected and actual result, and a screenshot path. Do not change code unless asked.",
+      "color": "red",
+      "mcp": {
+        "allow": []
+      },
+      "skills": {
+        "allow": [
+          "agent-browser",
+          "diagnosing-bugs",
+          "corvus:reap",
+          "ops:sentry",
+          "ops:posthog",
+          "ops:grafana",
+          "ops:clickup",
+          "artifact-design",
+          "artifact-capabilities",
+          "persona:setup"
+        ],
+        "quiet": ["gideon:mark-valuable-session"]
+      },
+      "agents": {
+        "allow": ["general-purpose", "Explore"]
+      }
+    }
+  },
+  "logins": {
+    "personal": { "folder": "~/.claude", "color": "blue" },
+    "work": { "folder": "~/.claude-work", "color": "#ff8800" }
+  }
+}
