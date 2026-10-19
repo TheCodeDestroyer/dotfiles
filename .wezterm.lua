@@ -191,5 +191,15 @@ table.insert(config.hyperlink_rules, {
   regex = PATH .. [[\((\d+),(\d+)\)]],
   format = 'vscode://file$1:$2:$3',
 })
+-- Bare paths (screenshots, scratchpad files) open in the default app. The
+-- lookahead keeps this off paths the rules above handle, and stops the regex
+-- backtracking to a shorter match: "/a/b.tsx:1" must not link "/a/b.ts",
+-- and "/a/.wezterm.lua:1" must not link "/a/.wezterm".
+-- The lookbehind skips the tail of a relative or wrapped path, such as
+-- "f96d/scratchpad/x.png" on the second row of a path that wrapped.
+table.insert(config.hyperlink_rules, {
+  regex = [[(?<![\w.~-])]] .. PATH .. [[(?![\w/-]|\.[\w/-]|:\d|\(\d)]],
+  format = 'file://$1',
+})
 
 return config
