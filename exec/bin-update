@@ -32,6 +32,10 @@ else
 fi
 
 echo "Updating repo..."
+# The chmod +x below would otherwise show as changes on a fresh clone and block
+# the pull. A clone writes core.filemode = true into .git/config, which beats
+# the global .gitconfig, so it has to be set here.
+git config core.fileMode false
 git pull --rebase
 
 echo "Adding executable privilige to scripts..."
