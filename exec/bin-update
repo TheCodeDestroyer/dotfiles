@@ -64,9 +64,6 @@ link ~/bin/.wezterm.lua ~/.wezterm.lua
 link ~/bin/exec/claude-statusline ~/.claude/statusline.sh
 link ~/bin/claude-global.md ~/.claude/CLAUDE.md
 link ~/bin/claude-personas.json ~/.claude/personas.json
-# `skills` rewrites its lock with writeFile, which follows the link, so adds and
-# updates land here. claude-update installs whatever the lock lists but is missing.
-link ~/bin/skills-lock.json ~/.agents/.skill-lock.json
 
 # mise secrets live in a machine-local conf.d file, never in this repo — it is
 # public, and age ciphertext published once cannot be rotated out of git history.

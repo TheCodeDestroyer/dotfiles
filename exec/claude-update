@@ -101,24 +101,41 @@ def install_missing(root):
 
 
 def install_missing_skills():
-    """Install the skills the lock lists but ~/.agents/skills lacks. bin-update
-    links the lock from the dotfiles, so a new machine starts with the full set."""
+    """Sync the global `skills` set with skills.json ({name: source}) in this
+    repo: install what it lists but this machine lacks, then add what this
+    machine has but it lacks. Not the lock itself: `skills` rewrites hashes and
+    timestamps in the lock on every install or update, which would leave the
+    repo dirty on every machine. Removing a skill means deleting it here too."""
     lock = os.path.expanduser("~/.agents/.skill-lock.json")
     try:
-        with open(lock) as f:
-            skills = json.load(f).get("skills") or {}
+        with open(SKILLS_LIST_FILE) as f:
+            wanted = json.load(f)
     except (OSError, ValueError):
-        return
-    for name, entry in sorted(skills.items()):
-        if os.path.isdir(os.path.join(SKILLS_DIR, name)):
+        wanted = {}
+    try:
+        with open(lock) as f:
+            local = {n: e["source"] for n, e in (json.load(f).get("skills") or {}).items()}
+    except (OSError, ValueError, KeyError):
+        local = {}
+
+    for name, source in sorted(wanted.items()):
+        if name in local and os.path.isdir(os.path.join(SKILLS_DIR, name)):
             continue
         rc = subprocess.run(
-            ["npx", "--yes", "skills", "add", entry["source"], "-g",
+            ["npx", "--yes", "skills", "add", source, "-g",
              "-s", name, "-a", "claude-code", "-y"],
             stdin=subprocess.DEVNULL, capture_output=True, timeout=300,
         ).returncode
         print(f"  Installed skill {name}" if rc == 0
               else f"  Install skill {name} failed: rc={rc}")
+
+    merged = dict(sorted({**local, **wanted}.items()))
+    if merged != wanted:
+        with open(SKILLS_LIST_FILE, "w") as f:
+            json.dump(merged, f, indent=2)
+            f.write("\n")
+        added = sorted(set(merged) - set(wanted))
+        print(f"  Added to {os.path.basename(SKILLS_LIST_FILE)}: {', '.join(added)}")
 
 
 def update_root(root):
@@ -237,6 +254,9 @@ def update_root(root):
 
 SKILLS_DIR = os.environ.get("AGENT_SKILLS_DIR") or os.path.expanduser(
     "~/.agents/skills"
+)
+SKILLS_LIST_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "skills.json"
 )
 OVERRIDES_FILE = os.environ.get("CLAUDE_OVERRIDES") or os.path.join(
     os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
