@@ -121,9 +121,12 @@ def install_missing_skills():
     for name, source in sorted(wanted.items()):
         if name in local and os.path.isdir(os.path.join(SKILLS_DIR, name)):
             continue
+        # codex reads ~/.agents/skills itself, so naming it makes `skills` keep
+        # the copy there and symlink it into ~/.claude/skills. With claude-code
+        # alone it copies straight into ~/.claude/skills instead.
         rc = subprocess.run(
             ["npx", "--yes", "skills", "add", source, "-g",
-             "-s", name, "-a", "claude-code", "-y"],
+             "-s", name, "-a", "claude-code", "codex", "-y"],
             stdin=subprocess.DEVNULL, capture_output=True, timeout=300,
         ).returncode
         print(f"  Installed skill {name}" if rc == 0
