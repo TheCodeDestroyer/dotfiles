@@ -91,7 +91,9 @@
       "corvus@spartan-plugins": true,
       "git@spartan-plugins": true,
       "react@spartan-plugins": true,
-      "node@spartan-plugins": true
+      "node@spartan-plugins": true,
+      "persona@claude-persona": true,
+      "supermods@thecodedestroyer-plugins": true
     },
     "extraKnownMarketplaces": {
       "openai-codex": {
@@ -116,6 +118,12 @@
         "source": {
           "source": "github",
           "repo": "spartandevelopment0/claude-code-plugins"
+        }
+      },
+      "claude-persona": {
+        "source": {
+          "source": "github",
+          "repo": "TheCodeDestroyer/claude-persona"
         }
       }
     }
