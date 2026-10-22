@@ -33,7 +33,8 @@ unset _zcompcache _zcompdump _zcompfresh _pending_compdefs _cd
 eval "$(fasd --init auto)"
 
 #PROFILES
-source ~/.profile
+# Machine-local, not in this repo; a machine may have none.
+[[ -f ~/.profile ]] && source ~/.profile
 
 #FUNCTIONS
 source ~/.zshfn
