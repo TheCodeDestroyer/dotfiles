@@ -30,7 +30,8 @@ compinit -d $_zcompdump ${_zcompfresh:+-C}
 for _cd in $_pending_compdefs; do compdef "${(@f)_cd}"; done
 unset _zcompcache _zcompdump _zcompfresh _pending_compdefs _cd
 
-eval "$(fasd --init auto)"
+# Guarded: Homebrew dropped fasd, so a newer machine may not have it.
+(( $+commands[fasd] )) && eval "$(fasd --init auto)"
 
 #PROFILES
 # Machine-local, not in this repo; a machine may have none.
