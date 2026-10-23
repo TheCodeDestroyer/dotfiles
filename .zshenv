@@ -52,9 +52,7 @@ fi
 alias ghee-default='ghee set --email "$GIT_EMAIL_PERSONAL"'
 alias ghee-work='ghee set --email "$GIT_EMAIL_WORK"'
 
-# Guarded: brew's bin is on PATH only in login shells (.zprofile), so a plain
-# `ssh host 'ls'` would otherwise fail with "command not found: lsd".
-(( $+commands[lsd] )) && alias ls='lsd'
+alias ls='lsd'
 
 alias c='z'
 alias opn='a -e xdg-open'
