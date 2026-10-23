@@ -30,8 +30,13 @@ compinit -d $_zcompdump ${_zcompfresh:+-C}
 for _cd in $_pending_compdefs; do compdef "${(@f)_cd}"; done
 unset _zcompcache _zcompdump _zcompfresh _pending_compdefs _cd
 
-# Guarded: Homebrew dropped fasd, so a newer machine may not have it.
-(( $+commands[fasd] )) && eval "$(fasd --init auto)"
+# fasd is a function sourced by sheldon (Homebrew dropped the formula); a
+# leftover brew binary also counts. Skip it only when neither is there.
+(( $+functions[fasd] || $+commands[fasd] )) && eval "$(fasd --init auto)"
+
+# Here, not in .zshenv: brew's bin is on PATH only after .zprofile, and a plain
+# `ssh host 'ls'` (no .zshrc) then keeps the system ls.
+(( $+commands[lsd] )) && alias ls='lsd'
 
 #PROFILES
 # Machine-local, not in this repo; a machine may have none.

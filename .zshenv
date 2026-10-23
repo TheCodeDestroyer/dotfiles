@@ -52,8 +52,6 @@ fi
 alias ghee-default='ghee set --email "$GIT_EMAIL_PERSONAL"'
 alias ghee-work='ghee set --email "$GIT_EMAIL_WORK"'
 
-alias ls='lsd'
-
 alias c='z'
 alias opn='a -e xdg-open'
 alias edt='f -e "$EDITOR"'
