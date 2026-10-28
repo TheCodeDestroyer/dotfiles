@@ -141,6 +141,17 @@ def install_missing_skills():
         print(f"  Added to {os.path.basename(SKILLS_LIST_FILE)}: {', '.join(added)}")
 
 
+def update_cli():
+    """Update the Claude Code binary itself. The native auto-updater only runs
+    from inside a session, so a machine with no session open (or with the
+    updater disabled) falls behind. Open sessions keep the old binary until
+    restart."""
+    print("\nUpdating Claude Code CLI...")
+    rc, out, err = sh(["claude", "update"], timeout=300)
+    last = (out.strip().splitlines() or ["done"])[-1]
+    print(f"  {last}" if rc == 0 else f"  failed: {err.strip() or rc}")
+
+
 def update_root(root):
     print(f"\n=== {root} ===")
     if not os.path.isdir(root):
@@ -546,6 +557,7 @@ def main():
     if not shutil.which("claude"):
         print("Claude Code CLI not found, skipping plugin updates")
     else:
+        update_cli()
         for root in config_roots():
             update_root(root)
 
