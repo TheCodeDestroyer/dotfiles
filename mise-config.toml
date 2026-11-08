@@ -19,7 +19,7 @@ rust = "latest"
 "npm:pnpm" = "latest-10"
 "npm:prettier" = "latest"
 "npm:@openai/codex" = "latest"
-"npm:vercel" = "latest"
+"npm:vercel" = { version = "latest", trust_policy_excludes = ["vercel", "@vercel/*"] }
 "npm:convex" = "latest"
 "npm:skills" = "latest"
 "npm:typescript" = "latest"
