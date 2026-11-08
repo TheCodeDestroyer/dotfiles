@@ -33,6 +33,9 @@
 	alias 	= !git config --get-regexp ^alias\\. | sed -e s/^alias\\.// -e s/\\ /\\ =\\ /
 [gpg]
 	program = {{GPG_EXECUTABLE}}
+# Empty helper clears Homebrew's system-wide osxkeychain helper.
+[credential]
+	helper =
 # Machine-local overrides (email, gpgsign = false on a machine with no key).
 # Last, so it wins; a missing file is ignored.
 [include]
