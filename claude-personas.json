@@ -47,7 +47,7 @@
         "quiet": ["gideon:mark-valuable-session"]
       },
       "agents": {
-        "allow": ["general-purpose", "Explore"]
+        "allow": ["general-purpose", "Explore", "vitrine:proposal-author"]
       }
     },
     "brainstorm": {
