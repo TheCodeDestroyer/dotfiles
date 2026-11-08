@@ -575,12 +575,6 @@ def main():
 
     apply_overrides(args.dry_run)
 
-    print("\nUpdating plannotator...")
-    if shutil.which("plannotator-update"):
-        subprocess.run(["plannotator-update"])
-    else:
-        print("  plannotator-update not found, skipping")
-
     print("\n>>> Restart Claude Code to apply plugin updates "
           "(versions are pinned at process start).")
 
