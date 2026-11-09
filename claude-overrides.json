@@ -17,6 +17,7 @@
       "claude-haiku-4-5": null
     },
     "tui": "fullscreen",
+    "theme": "dark",
     "autoMemoryEnabled": false,
     "skipWorkflowUsageWarning": true,
     "remoteControlAtStartup": false,
@@ -44,7 +45,9 @@
         "LSP",
         "Skill",
         "WebSearch",
-        "mcp__plugin_context7-plugin_context7__*"
+        "mcp__plugin_context7_context7__*",
+        "!mcp__plugin_context7-plugin_context7__*",
+        "!mcp__plugin_context7__*"
       ],
       "ask": [
         "Bash(clickup * acl *)",
@@ -62,7 +65,9 @@
         "Bash(curl *github.com*)",
         "Bash(wget *github.com*)",
         "Bash(bd remember:*)",
-        "Bash(bd memories:*)"
+        "Bash(bd memories:*)",
+        "!Bash(curl: *github.com*)",
+        "!Bash(wget: *github.com*)"
       ]
     },
     "skillOverrides": {

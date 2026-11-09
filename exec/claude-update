@@ -14,7 +14,8 @@ table reflects what will be active after restart.
 It then applies claude-overrides.json: the `skills` section re-patches SKILL.md
 frontmatter, which `skills update` overwrites with upstream whenever upstream
 moves that skill, and the `settings` section merges keys into each config
-home's settings.json (lists union, null deletes, machine-local keys survive),
+home's settings.json (lists union, "!<item>" removes a list item, null
+deletes, machine-local keys survive),
 the `seed` section writes settings.json keys only where a home lacks them,
 and the `config` section merges the same way into each home's global config
 (.claude.json). It also links each home's CLAUDE.md to claude-global.md, and
@@ -407,30 +408,55 @@ def load_override_doc():
     return doc
 
 
+def split_removals(items):
+    """Split a desired list into (items to keep, items a "!<item>" removes)."""
+    keep, drop = [], []
+    for v in items:
+        if isinstance(v, str) and v.startswith("!"):
+            drop.append(v[1:])
+        else:
+            keep.append(v)
+    return keep, drop
+
+
 def merge_settings(current, desired, path=""):
     """Deep-merge desired into current, returning (merged, changes).
 
     Mappings recurse. Lists UNION (existing order kept, new appended) so a
-    machine-local permission rule is never dropped by the shared config. null
-    deletes the key, matching the frontmatter patcher's revert convention.
-    Anything else replaces. Changes are (mark, dotted path, value) triples.
+    machine-local permission rule is never dropped by the shared config; a
+    "!<item>" string in a list removes <item> instead, to retire an old entry
+    on every machine (drop the "!" entry once every machine has applied it).
+    null deletes the key, matching the frontmatter patcher's revert
+    convention. Anything else replaces. Changes are (mark, dotted path, value)
+    triples.
     """
     merged, changes = dict(current), []
     for key, want in desired.items():
         where = f"{path}.{key}" if path else key
         have = merged.get(key)
+        if key not in merged and isinstance(want, (dict, list)):
+            # Merge a new key into an empty container, so its null and "!"
+            # entries are applied instead of written as literals.
+            have = type(want)()
         if want is None:
             if key in merged:
                 del merged[key]
                 changes.append(("-", where, ""))
         elif isinstance(want, dict) and isinstance(have, dict):
             sub, sub_changes = merge_settings(have, want, where)
-            merged[key] = sub
-            changes.extend(sub_changes)
+            if sub_changes:
+                merged[key] = sub
+                changes.extend(sub_changes)
         elif isinstance(want, list) and isinstance(have, list):
-            added = [v for v in want if v not in have]
+            keep, drop = split_removals(want)
+            remaining = [v for v in have if v not in drop]
+            removed = [v for v in have if v in drop]
+            added = [v for v in keep if v not in have]
+            if removed or added:
+                merged[key] = remaining + added
+            if removed:
+                changes.append(("-", where, ", ".join(map(str, removed))))
             if added:
-                merged[key] = have + added
                 changes.append(("+", where, ", ".join(map(str, added))))
         elif key not in merged:
             merged[key] = want
@@ -600,8 +626,10 @@ def settings_drift(current, desired, ignore, path=""):
         if isinstance(want, dict) and isinstance(have, dict):
             yield from settings_drift(have, want, ignore, where)
         elif isinstance(want, list) and isinstance(have, list):
+            keep, drop = split_removals(want)
             for item in have:
-                if item not in want:
+                # an item a "!" entry retires is removed on apply, not drift
+                if item not in keep and item not in drop:
                     yield f"{where}[]", item
         elif have != want:
             yield where, have
