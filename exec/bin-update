@@ -62,7 +62,7 @@ link ~/bin/starship.toml ~/.config/starship.toml
 link ~/bin/mise-config.toml ~/.config/mise/config.toml
 link ~/bin/.wezterm.lua ~/.wezterm.lua
 link ~/bin/exec/claude-statusline ~/.claude/statusline.sh
-link ~/bin/claude-global.md ~/.claude/CLAUDE.md
+# CLAUDE.md is linked per config root by claude-update, not here.
 link ~/bin/claude-personas.json ~/.claude/personas.json
 
 # mise secrets live in a machine-local conf.d file, never in this repo — it is

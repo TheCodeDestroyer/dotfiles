@@ -17,10 +17,13 @@ moves that skill, and the `settings` section merges keys into each config
 home's settings.json (lists union, null deletes, machine-local keys survive),
 the `seed` section writes settings.json keys only where a home lacks them,
 and the `config` section merges the same way into each home's global config
-(.claude.json). `--overrides-only` runs those steps alone; `--dry-run` previews
-them without writing.
+(.claude.json). It also links each home's CLAUDE.md to claude-global.md, and
+ends with a drift report: settings.json keys the overrides do not manage.
+`--overrides-only` runs those steps alone; `--dry-run` previews them without
+writing; `--drift` prints only the report.
 """
 import argparse
+import filecmp
 import fnmatch
 import json
 import os
@@ -47,8 +50,15 @@ def sh(cmd, root=None, timeout=600):
 
 
 def config_roots():
-    raw = os.environ.get("CLAUDE_CONFIG_ROOTS") or DEFAULT_ROOT
-    return [r.strip() for r in raw.split(",") if r.strip()]
+    """Every Claude config root: each logins.<name>.folder in
+    claude-personas.json, else ~/.claude. Same function in claude-config-guard.
+    """
+    try:
+        with open(PERSONAS_FILE) as f:
+            logins = json.load(f)["logins"].values()
+        return [os.path.expanduser(login["folder"]) for login in logins]
+    except (OSError, ValueError, KeyError, TypeError):
+        return [DEFAULT_ROOT]
 
 
 def list_plugins(root):
@@ -269,12 +279,11 @@ def update_root(root):
 SKILLS_DIR = os.environ.get("AGENT_SKILLS_DIR") or os.path.expanduser(
     "~/.agents/skills"
 )
-SKILLS_LIST_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "skills.json"
-)
+REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+SKILLS_LIST_FILE = os.path.join(REPO, "skills.json")
+PERSONAS_FILE = os.path.join(REPO, "claude-personas.json")
 OVERRIDES_FILE = os.environ.get("CLAUDE_OVERRIDES") or os.path.join(
-    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-    "claude-overrides.json",
+    REPO, "claude-overrides.json"
 )
 _YAML_RESERVED = {"true", "false", "null", "yes", "no", "on", "off", "~"}
 
@@ -527,13 +536,114 @@ OVERRIDE_SECTIONS = {
 }
 
 
+GLOBAL_MD = os.path.join(REPO, "claude-global.md")
+
+
+def link_global_md(dry_run=False):
+    """Point every config root's CLAUDE.md at claude-global.md in this repo.
+
+    A regular file is replaced only when its text is identical; otherwise it is
+    reported and left alone, so a hand-written CLAUDE.md is never lost.
+    """
+    print("\nLinking global CLAUDE.md...")
+    for root in config_roots():
+        link = os.path.join(root, "CLAUDE.md")
+        if os.path.islink(link) and os.readlink(link) == GLOBAL_MD:
+            print(f"  {link}: up to date")
+            continue
+        if not os.path.isdir(root):
+            print(f"  {root}: no such config root, skipping")
+            continue
+        if (os.path.isfile(link) and not os.path.islink(link)
+                and not filecmp.cmp(link, GLOBAL_MD, shallow=False)):
+            print(f"  {link}: own file that differs from {GLOBAL_MD}, "
+                  "left alone; merge it by hand, then delete it")
+            continue
+        # "~" replaces an existing file or link (e.g. a relative chain).
+        exists = os.path.lexists(link)
+        mark = "~" if exists else "+"
+        if not dry_run:
+            if exists:
+                os.remove(link)
+            os.symlink(GLOBAL_MD, link)
+        note = " (NOT written, --dry-run)" if dry_run else ""
+        print(f"  {mark} {link} -> {GLOBAL_MD}{note}")
+
+
+# -- drift ------------------------------------------------------------------
+# The merge above only ADDS what the overrides name, so a key set by hand in
+# one root (/config, /model, /permissions, an "always allow") survives
+# silently and never reaches the other machine. The drift report lists what a
+# root's settings.json holds that the overrides do not, so it can be promoted
+# into claude-overrides.json (it is a PUBLIC repo: no client details) or left
+# as machine-local on purpose.
+#
+# Dotted paths a root owns on purpose, so the report skips them. The keys of
+# the `seed` section are skipped too: each root owns those after the first write.
+DRIFT_IGNORE = {
+    # written by Claude Code's auto-mode setup from one repo; it describes that
+    # repo (client names, paths), so it is machine-local and never public
+    "autoMode.environment",
+}
+
+
+def settings_drift(current, desired, ignore, path=""):
+    """Yield (dotted path, value) that current holds and desired does not set."""
+    for key, have in current.items():
+        where = f"{path}.{key}" if path else key
+        if where in ignore:
+            continue
+        want = desired.get(key)
+        if want is None:
+            yield where, have
+            continue
+        if isinstance(want, dict) and isinstance(have, dict):
+            yield from settings_drift(have, want, ignore, where)
+        elif isinstance(want, list) and isinstance(have, list):
+            for item in have:
+                if item not in want:
+                    yield f"{where}[]", item
+        elif have != want:
+            yield where, have
+
+
+def report_drift(doc):
+    """Print per-root drift; return the number of drifted entries."""
+    print("\nDrift (in settings.json, not in claude-overrides.json):")
+    desired = doc.get("settings") or {}
+    ignore = DRIFT_IGNORE | set(doc.get("seed") or {})
+    total = 0
+    for root in config_roots():
+        target = settings_file(root)
+        try:
+            with open(target) as f:
+                current = json.load(f)
+        except FileNotFoundError:
+            continue
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  {target}: unreadable ({exc})")
+            continue
+        drift = list(settings_drift(current, desired, ignore))
+        total += len(drift)
+        print(f"  {target}: {len(drift) or 'none'}")
+        for where, value in drift:
+            print(f"    {where}: {json.dumps(value, ensure_ascii=False)[:120]}")
+    if total:
+        print("  Promote shared entries into claude-overrides.json, or leave "
+              "machine-local ones; add a deliberate local key to DRIFT_IGNORE.")
+    return total
+
+
 def apply_overrides(dry_run=False):
-    """Read claude-overrides.json once and hand each section to its target."""
+    """Link each root's CLAUDE.md, hand each claude-overrides.json section to
+    its target, then report drift."""
+    link_global_md(dry_run)
     doc = load_override_doc()
     if doc is None:
         return
     for section, handler in OVERRIDE_SECTIONS.items():
         handler(doc.get(section) or {}, dry_run=dry_run)
+    report_drift(doc)
 
 
 def main():
@@ -544,7 +654,14 @@ def main():
                          "skipping every marketplace, plugin and skill update")
     ap.add_argument("--dry-run", action="store_true",
                     help="preview override changes without writing them")
+    ap.add_argument("--drift", action="store_true",
+                    help="only report settings.json keys the overrides do not "
+                         "manage; exit 1 when there are any")
     args = ap.parse_args()
+
+    if args.drift:
+        doc = load_override_doc()
+        return 1 if doc is None or report_drift(doc) else 0
 
     if args.overrides_only:
         apply_overrides(args.dry_run)

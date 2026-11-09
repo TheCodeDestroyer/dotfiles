@@ -22,3 +22,4 @@
 - User instructions always override this file.
 - GitHub: use `gh` CLI (never curl/wget on github.com URLs)
 - When trying to use browser always use agent-browser
+- Claude config dirs: there is more than one. `~/.claude/personas.json` lists them all, key `logins.<name>.folder`. When you scan sessions, projects or settings, scan every root.
