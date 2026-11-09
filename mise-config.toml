@@ -1,7 +1,7 @@
 # Global mise config, linked to ~/.config/mise/config.toml by exec/bin-update.
 #
-# Named mise-config.toml in the repo, not mise.toml: a `mise.toml` in ~/bin would
-# be picked up as a project config for that directory.
+# Named mise-config.toml in the repo, not mise.toml: ~/bin/mise.toml is this
+# repo's own project config (lefthook), which mise reads only inside ~/bin.
 #
 # Tools and settings only. Secrets live in ~/.config/mise/conf.d/secrets.toml,
 # which is machine-local and never enters this repo — it is public, and age

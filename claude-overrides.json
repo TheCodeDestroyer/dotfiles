@@ -72,6 +72,19 @@
     },
     "env": {
       "ANTHROPIC_MODEL": "opus[1m]"
+    },
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "Edit|Write|MultiEdit|Bash",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "$HOME/bin/exec/claude-config-guard-hook"
+            }
+          ]
+        }
+      ]
     }
   },
   "config": {

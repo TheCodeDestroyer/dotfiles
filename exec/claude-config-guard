@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""claude-config-guard - keep Claude Code config in claude-overrides.json, and
+keep claude-overrides.json safe to publish.
+
+This repo is PUBLIC. claude-overrides.json is the source of truth for every
+config root's settings.json (claude-update merges it in), so:
+
+  --hook        PreToolUse hook (reads the hook JSON on stdin).
+                - Denies an Edit/Write/MultiEdit (or an obvious Bash write) of
+                  a config root's settings.json and points to the overrides
+                  file, so a change made by Claude reaches every machine.
+                - Denies an Edit/Write/MultiEdit of claude-overrides.json whose
+                  new text looks sensitive (see --lint).
+  --lint [FILE] Scan FILE (default: claude-overrides.json, `-` = stdin) for
+                sensitive text. Exit 1 on a hit. The dotfiles pre-commit hook
+                runs this on the staged file.
+
+Sensitive = home-directory paths, email addresses, token-shaped strings, and
+any term in the private terms file: one case-insensitive term per line, `#`
+comments. That file is per machine and NOT in this repo, because a list of
+client names in a public repo leaks the names it is meant to protect. Path:
+$CLAUDE_SENSITIVE_TERMS, else ~/.config/claude/sensitive-terms.txt.
+"""
+import json
+import os
+import re
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+OVERRIDES_FILE = os.environ.get("CLAUDE_OVERRIDES") or os.path.join(
+    REPO, "claude-overrides.json"
+)
+PERSONAS_FILE = os.path.join(REPO, "claude-personas.json")
+DEFAULT_ROOT = os.path.expanduser("~/.claude")
+TERMS_FILE = os.environ.get("CLAUDE_SENSITIVE_TERMS") or os.path.expanduser(
+    "~/.config/claude/sensitive-terms.txt"
+)
+
+PATTERNS = [
+    ("home path", re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+")),
+    ("email", re.compile(r"\b[\w.+-]+@[\w-]+\.[A-Za-z]{2,}\b")),
+    ("token", re.compile(
+        r"\b(?:sk-ant-[\w-]{8,}|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}"
+        r"|github_pat_\w{20,}|xox[abpr]-[\w-]{10,}|AKIA[0-9A-Z]{16}|AIza[\w-]{30,}"
+        r"|glpat-[\w-]{20,}|[sp]k_live_\w{10,})")),
+    ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("secret value", re.compile(
+        r"\"[^\"]*(?:password|passwd|secret|api[_-]?key|token)[^\"]*\"\s*:\s*\"[^\"$]{8,}\"",
+        re.I)),
+]
+
+
+def private_terms():
+    try:
+        with open(TERMS_FILE) as f:
+            lines = [ln.split("#", 1)[0].strip() for ln in f]
+    except OSError:
+        return []
+    return [t for t in lines if t]
+
+
+def scan(text):
+    """Return [(line_no, kind, match)] for sensitive text."""
+    terms = private_terms()
+    hits = []
+    for no, line in enumerate(text.splitlines(), 1):
+        for kind, rx in PATTERNS:
+            hits += [(no, kind, m.group(0)) for m in rx.finditer(line)]
+        low = line.lower()
+        hits += [(no, "private term", t) for t in terms if t.lower() in low]
+    return hits
+
+
+def config_roots():
+    """Every Claude config root: each logins.<name>.folder in
+    claude-personas.json, else ~/.claude. Same function in claude-update.
+    """
+    try:
+        with open(PERSONAS_FILE) as f:
+            logins = json.load(f)["logins"].values()
+        return [os.path.expanduser(login["folder"]) for login in logins]
+    except (OSError, ValueError, KeyError, TypeError):
+        return [DEFAULT_ROOT]
+
+
+def is_root_settings(path):
+    path = os.path.realpath(os.path.expanduser(path))
+    return (os.path.basename(path) == "settings.json"
+            and os.path.dirname(path) in map(os.path.realpath, config_roots()))
+
+
+SETTINGS_REASON = (
+    "This settings.json is generated: claude-update merges ~/bin/claude-overrides.json "
+    "into every config root on every machine. Put the change in "
+    "~/bin/claude-overrides.json (section `settings`) and run "
+    "`claude-update --overrides-only`. The dotfiles repo is PUBLIC: no client "
+    "names, home paths or secrets there. If the change is machine-local on "
+    "purpose, ask the user to make it with /config or by hand."
+)
+
+# A Bash command that writes a root's settings.json: a redirect, tee, sed -i,
+# mv or cp whose target is <root>/settings.json. The path match starts only at
+# a word start (after a space, `>` or quote), so the scan stays linear.
+BASH_WRITE = re.compile(
+    r"(?:>|\btee\b|\bsed\s+-i|\bmv\b|\bcp\b)[^|;&]*?(?<![^\s>])['\"]?"
+    r"([^\s|;&'\"]*settings\.json)")
+
+
+def deny(reason):
+    json.dump({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": reason,
+    }}, sys.stdout)
+    return 0
+
+
+def hook():
+    try:
+        event = json.load(sys.stdin)
+    except ValueError:
+        return 0
+    tool = event.get("tool_name", "")
+    args = event.get("tool_input") or {}
+
+    if tool == "Bash":
+        cmd = args.get("command", "")
+        if any(is_root_settings(p) for p in BASH_WRITE.findall(cmd)):
+            return deny(SETTINGS_REASON)
+        return 0
+    path = args.get("file_path", "")
+    if tool not in ("Edit", "Write", "MultiEdit") or not path:
+        return 0
+    if is_root_settings(path):
+        return deny(SETTINGS_REASON)
+    if os.path.realpath(path) != os.path.realpath(OVERRIDES_FILE):
+        return 0
+    # Each tool fills only its own field: Write content, Edit new_string,
+    # MultiEdit edits[].new_string.
+    new_text = "\n".join([args.get("content", ""), args.get("new_string", "")]
+                         + [e.get("new_string", "") for e in args.get("edits", [])])
+    hits = scan(new_text)
+    if not hits:
+        return 0
+    found = "; ".join(f"{kind}: {match!r}" for _, kind, match in hits[:5])
+    return deny(
+        "claude-overrides.json is in a PUBLIC repo and this edit adds "
+        f"sensitive text ({found}). Use $HOME or ~ instead of a home path, "
+        "and keep client or org details out: leave them in the machine's "
+        "own settings.json (ask the user)."
+    )
+
+
+def lint(path):
+    if path == "-":
+        text, label = sys.stdin.read(), "stdin"
+    else:
+        with open(path) as f:
+            text, label = f.read(), path
+    hits = scan(text)
+    for no, kind, match in hits:
+        print(f"{label}:{no}: {kind}: {match}")
+    if not hits:
+        return 0
+    print(f"{len(hits)} sensitive match(es); this repo is public.", file=sys.stderr)
+    return 1
+
+
+def main(argv):
+    if argv[:1] == ["--hook"]:
+        return hook()
+    if argv[:1] == ["--lint"]:
+        return lint(argv[1] if len(argv) > 1 else OVERRIDES_FILE)
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

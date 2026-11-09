@@ -1,0 +1,11 @@
+# Project config for this repo only (the global one is mise-config.toml).
+# It pins lefthook, and its postinstall hook installs the git hooks in lefthook.yml.
+
+[tools]
+lefthook = "2.2.2"
+
+[hooks]
+# Runs after every `mise install` inside ~/bin, even when lefthook is already
+# installed. --reset-hooks-path clears a core.hooksPath another tool set (e.g.
+# the old .githooks), which would hide lefthook's hooks.
+postinstall = "lefthook install --reset-hooks-path"

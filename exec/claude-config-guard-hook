@@ -1,0 +1,9 @@
+#!/bin/sh
+# claude-config-guard-hook - PreToolUse entry point for claude-config-guard.
+# The hook fires on every Edit/Write/MultiEdit/Bash call; start Python only when
+# the payload names a file the guard protects.
+in=$(cat)
+case $in in
+    *settings.json*|*claude-overrides.json*)
+        printf '%s' "$in" | "$(dirname "$0")/claude-config-guard" --hook ;;
+esac

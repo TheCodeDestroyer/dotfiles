@@ -1,0 +1,13 @@
+# Git hooks for this repo. mise.toml pins lefthook; its postinstall hook runs
+# `lefthook install` after any `mise install` in ~/bin (exec/bin-update runs one).
+output:
+  - failure
+
+pre-commit:
+  commands:
+    # claude-overrides.json is published with this PUBLIC repo: refuse a commit
+    # that stages sensitive text in it. Lints the staged copy, not the work tree.
+    overrides-lint:
+      glob: "claude-overrides.json"
+      run: git show :claude-overrides.json | exec/claude-config-guard --lint -
+      fail_text: "sensitive text in staged claude-overrides.json (see above)"
