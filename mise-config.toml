@@ -44,6 +44,9 @@ rust = "latest"
 age = "latest"
 "github:TheCodeDestroyer/nimrod" = "latest"
 "cargo:clickup-cli" = "latest"
+# Were Homebrew; moved here so every machine (mini too) gets them from dotfiles.
+rtk = "latest"
+agent-browser = "latest"
 
 [settings]
 minimum_release_age = "14d"
