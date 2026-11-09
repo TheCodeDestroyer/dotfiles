@@ -28,6 +28,7 @@
         "Bash(archon:*)",
         "Bash(bd:*)",
         "Bash(cat:*)",
+        "Bash(clickup:*)",
         "Bash(gh:*)",
         "Bash(git:*)",
         "Bash(graphiti:*)",
@@ -44,6 +45,17 @@
         "Skill",
         "WebSearch",
         "mcp__plugin_context7-plugin_context7__*"
+      ],
+      "ask": [
+        "Bash(clickup * acl *)",
+        "Bash(clickup * chat *)",
+        "Bash(clickup * delete*)",
+        "Bash(clickup * embed-image*)",
+        "Bash(clickup * guest *)",
+        "Bash(clickup * remove*)",
+        "Bash(clickup * upload*)",
+        "Bash(clickup * user *)",
+        "Bash(clickup * webhook *)"
       ],
       "deny": [
         "WebFetch(domain:github.com)",
