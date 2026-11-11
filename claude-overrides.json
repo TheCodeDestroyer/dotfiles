@@ -2,7 +2,7 @@
   "skills": {},
   "settings": {
     "cleanupPeriodDays": 9999,
-    "model": null,
+    "model": "DRIFT_IGNORE",
     "effortLevel": "high",
     "modelSettings": {
       "opus": {
