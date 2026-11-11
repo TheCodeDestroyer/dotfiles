@@ -3,16 +3,17 @@
   "settings": {
     "cleanupPeriodDays": 9999,
     "model": null,
-    "effortLevel": "xhigh",
+    "effortLevel": "high",
     "modelSettings": {
       "opus": {
-        "effortLevel": "high"
+        "effortLevel": "medium"
       },
       "fable": {
         "effortLevel": "medium"
       },
       "claude-opus-5": null,
       "claude-fable-5-1": null,
+      "claude-fable-5-2": null,
       "claude-sonnet-5": null,
       "claude-haiku-4-5": null
     },
@@ -70,13 +71,6 @@
       "type": "command",
       "command": "bash \"$HOME/.claude/statusline.sh\""
     },
-    "autoMode": {
-      "soft_deny": [
-        "$defaults",
-        "Bash(kubectl:*production*)",
-        "Bash(kubectl:*staging*)"
-      ]
-    },
     "env": {
       "ANTHROPIC_MODEL": "opus[1m]"
     },
@@ -92,6 +86,14 @@
           ]
         }
       ]
+    },
+    "autoMode": {
+      "allow": [
+        "$defaults",
+        "ClickUp CLI: any `clickup`, `clickup-cli` or `clkup` command is allowed, including task updates, status changes, tags, comments and task creation, in any ClickUp workspace, without asking the user first. The clickup-guard hook already asks the user before the risky ones (deletes, removes, uploads, chat, invites, ACL and webhook changes), so do not block a clickup command as an External System Write."
+      ],
+      "soft_deny": "DRIFT_IGNORE",
+      "environment": "DRIFT_IGNORE"
     }
   },
   "config": {

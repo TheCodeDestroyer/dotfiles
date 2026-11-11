@@ -6,8 +6,9 @@ re-pin installed plugins. Plugin versions are pinned in installed_plugins.json
 and stay frozen until `claude plugin update <plugin>` rewrites them, so a
 marketplace-only updater silently leaves plugins on stale versions.
 
-This script: refreshes marketplaces, then updates every installed plugin at its
-own scope, for each config home, and prints a per-home drift table
+This script: refreshes every marketplace, then updates every installed plugin
+at its own scope, each step in parallel across all config homes
+(CLAUDE_UPDATE_JOBS at once, default 10), and prints a per-home drift table
 (old -> new). Plugin updates need a Claude Code restart to take effect, so the
 table reflects what will be active after restart.
 
@@ -15,7 +16,7 @@ It then applies claude-overrides.json: the `skills` section re-patches SKILL.md
 frontmatter, which `skills update` overwrites with upstream whenever upstream
 moves that skill, and the `settings` section merges keys into each config
 home's settings.json (lists union, "!<item>" removes a list item, null
-deletes, machine-local keys survive),
+deletes, "DRIFT_IGNORE" marks a key the home owns, machine-local keys survive),
 the `seed` section writes settings.json keys only where a home lacks them,
 and the `config` section merges the same way into each home's global config
 (.claude.json). It also links each home's CLAUDE.md to claude-global.md, and
@@ -31,6 +32,8 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 DEFAULT_ROOT = os.path.expanduser("~/.claude")
@@ -78,30 +81,39 @@ def list_plugins(root):
     }
 
 
+def marketplace_names(root):
+    rc, out, _ = sh(["claude", "plugin", "marketplace", "list", "--json"],
+                    root=root, timeout=120)
+    try:
+        return sorted(m["name"] for m in json.loads(out)) if rc == 0 else []
+    except (ValueError, KeyError, TypeError):
+        return []
+
+
 def install_missing(root):
     """Add the marketplaces and install the plugins settings.json names but the
-    root lacks. A fresh machine gets both lists from the `seed` section, so run
+    root lacks; return (marketplace names, installed plugins) as they stand
+    afterwards. A fresh machine gets both lists from the `seed` section, so run
     `claude-update --overrides-only` once before the first full run there."""
     try:
         with open(settings_file(root)) as f:
             settings = json.load(f)
     except (OSError, ValueError):
-        return
+        settings = {}
 
-    rc, out, _ = sh(["claude", "plugin", "marketplace", "list", "--json"], root=root)
-    try:
-        have = {m.get("name") for m in json.loads(out)} if rc == 0 else set()
-    except ValueError:
-        have = set()
+    names, added = marketplace_names(root), False
     for name, entry in sorted((settings.get("extraKnownMarketplaces") or {}).items()):
         src = entry.get("source") or {}
-        if name in have or src.get("source") != "github":
+        if name in names or src.get("source") != "github":
             continue
         rc, _, err = sh(["claude", "plugin", "marketplace", "add", src["repo"]], root=root)
         print(f"  Added marketplace {name}" if rc == 0
               else f"  Marketplace {name} failed: {err.strip() or rc}")
+        added = added or rc == 0
+    if added:
+        names = marketplace_names(root)
 
-    installed = list_plugins(root)
+    installed, added = list_plugins(root), False
     for pid in sorted(settings.get("enabledPlugins") or {}):
         if pid in installed:
             continue
@@ -109,6 +121,10 @@ def install_missing(root):
                         root=root, timeout=300)
         print(f"  Installed {pid}" if rc == 0
               else f"  Install {pid} failed: {err.strip() or rc}")
+        added = added or rc == 0
+    if added:
+        installed = list_plugins(root)
+    return names, installed
 
 
 def install_missing_skills():
@@ -163,36 +179,113 @@ def update_cli():
     print(f"  {last}" if rc == 0 else f"  failed: {err.strip() or rc}")
 
 
-def update_root(root):
-    print(f"\n=== {root} ===")
-    if not os.path.isdir(root):
-        print("  (no such config home, skipping)")
-        return
+# How many `claude` processes run at once. Each is a full CLI process, so keep
+# this well below the plugin count.
+JOBS = int(os.environ.get("CLAUDE_UPDATE_JOBS") or 10)
 
-    install_missing(root)
 
-    print("  Refreshing marketplaces...")
-    rc, _, err = sh(["claude", "plugin", "marketplace", "update"], root=root)
-    print("    done" if rc == 0 else f"    failed: {err.strip() or rc}")
+def run_all(jobs, fn):
+    """Run fn(*job) for every job on JOBS threads; return results in job order."""
+    with ThreadPoolExecutor(max_workers=JOBS) as pool:
+        return list(pool.map(lambda job: fn(*job), jobs))
 
-    before = list_plugins(root)
+
+def last_json(out):
+    """The last stdout line that parses as a JSON object, else {}."""
+    for line in reversed(out.strip().splitlines()):
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def refresh_marketplace(root, name):
+    """Refresh one marketplace; return None on success, else the error.
+
+    One by name, not the bulk `marketplace update`: the bulk call refreshes
+    them one after another (25s for 6, against 5s in parallel). The parallel
+    runs share known_marketplaces.json, but a lost write there costs only its
+    lastUpdated stamp, not the clone. The bulk call also refreshes the /plugin
+    browse catalog (plugin-directory-cache-v2.json); a refresh by name does
+    not, and Claude Code refreshes that catalog on its own.
+    """
+    rc, _, err = sh(["claude", "plugin", "marketplace", "update", name],
+                    root=root, timeout=300)
+    return None if rc == 0 else (err.strip() or f"rc={rc}")
+
+
+def update_plugin(root, pid, scope):
+    """Update one plugin; return (new_version_or_None, error_or_None)."""
+    rc, out, err = sh(
+        ["claude", "plugin", "update", pid, "--scope", scope, "--json"],
+        root=root,
+        timeout=300,
+    )
+    result = last_json(out)
+    if rc != 0:
+        return None, result.get("message") or err.strip() or f"rc={rc}"
+    return result.get("newVersion"), None
+
+
+def update_roots(roots):
+    """Refresh every marketplace, then update every plugin, across all homes.
+
+    Each phase runs as one parallel pool over all homes, so the slowest single
+    git fetch sets the time, not the sum. Plugin updates in one home share
+    installed_plugins.json, which Claude Code rewrites whole with no
+    cross-process lock, so two updates that finish together can drop one
+    version change. The repair pass re-runs, one at a time, every update whose
+    reported version is not what `plugin list` shows afterwards.
+    """
+    homes, names, before = [], {}, {}
+    for root in roots:
+        print(f"\n=== {root} ===")
+        if not os.path.isdir(root):
+            print("  (no such config home, skipping)")
+            continue
+        homes.append(root)
+        names[root], before[root] = install_missing(root)
+
+    started = time.monotonic()
+    jobs = [(root, name) for root in homes for name in names[root]]
+    print(f"\nRefreshing {len(jobs)} marketplaces in {len(homes)} homes...")
+    errors = run_all(jobs, refresh_marketplace)
+    for (root, name), err in zip(jobs, errors):
+        if err:
+            print(f"  {name} ({root}) failed: {err}")
+    print(f"  done in {time.monotonic() - started:.0f}s")
+
+    started = time.monotonic()
+    jobs = [(root, pid, info["scope"])
+            for root in homes for pid, info in sorted(before[root].items())]
+    print(f"\nUpdating {len(jobs)} plugins in {len(homes)} homes...")
+    results = dict(zip(jobs, run_all(jobs, update_plugin)))
+    after = dict(zip(homes, run_all([(r,) for r in homes], list_plugins)))
+
+    lost = [job for job, (new, _) in results.items()
+            if new and after[job[0]].get(job[1], {}).get("version") != new]
+    if lost:
+        print(f"  Repairing {len(lost)} lost version changes...")
+        for job in lost:
+            results[job] = update_plugin(*job)
+        for root in {job[0] for job in lost}:
+            after[root] = list_plugins(root)
+    print(f"  done in {time.monotonic() - started:.0f}s")
+
+    for root in homes:
+        print(f"\n=== {root} ===")
+        report_versions(before[root], after[root],
+                        {pid: err for (r, pid, _), (_, err) in results.items()
+                         if r == root and err})
+
+
+def report_versions(before, after, failures):
     if not before:
         print("  No installed plugins found.")
         return
-
-    print(f"  Updating {len(before)} plugins...")
-    failures = {}
-    for pid, info in sorted(before.items()):
-        rc, _, err = sh(
-            ["claude", "plugin", "update", pid, "--scope", info["scope"]],
-            root=root,
-            timeout=300,
-        )
-        if rc != 0:
-            failures[pid] = err.strip() or f"rc={rc}"
-
-    after = list_plugins(root)
-
     changed = [
         (pid, before[pid]["version"], after.get(pid, {}).get("version", "?"),
          before[pid]["scope"])
@@ -387,17 +480,42 @@ def patch_frontmatter(path, values, dry_run=False):
     return changes, None
 
 
+# A settings key a root owns on purpose is named in the settings section with
+# this value in place of a real one. It is taken out of the section on load,
+# so the merge never sees the key and leaves it as the root has it, and the
+# drift report skips its dotted path. The key name is public; its content is not.
+DRIFT_IGNORE = "DRIFT_IGNORE"
+
+
+def split_drift_ignore(desired, path=""):
+    """Split a settings mapping into (the values to merge, the dotted paths
+    set to DRIFT_IGNORE)."""
+    values, paths = {}, set()
+    for key, want in desired.items():
+        where = f"{path}.{key}" if path else key
+        if want == DRIFT_IGNORE:
+            paths.add(where)
+        elif isinstance(want, dict):
+            values[key], below = split_drift_ignore(want, where)
+            paths |= below
+        else:
+            values[key] = want
+    return values, paths
+
+
 def load_override_doc():
-    """Read the override file, or None. Warns about keys that are not sections."""
+    """Read the override file; return (doc, drift-ignore paths), or (None,
+    set()). The doc's settings section comes back without its DRIFT_IGNORE
+    keys. Warns about keys that are not sections."""
     if not os.path.isfile(OVERRIDES_FILE):
         print(f"  no override config at {OVERRIDES_FILE}, skipping")
-        return None
+        return None, set()
     try:
         with open(OVERRIDES_FILE) as f:
             doc = json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
         print(f"  unreadable override config: {exc}")
-        return None
+        return None, set()
     # A key that is not a known section is almost certainly the pre-sections
     # flat format ({skill: {key: value}}), which would otherwise resolve to
     # nothing at all. Say so rather than silently no-op.
@@ -405,7 +523,8 @@ def load_override_doc():
     if unknown:
         print(f"  warning: ignoring non-section key(s): {', '.join(sorted(unknown))}")
         print(f"  (expected top-level sections: {', '.join(OVERRIDE_SECTIONS)})")
-    return doc
+    doc["settings"], ignore = split_drift_ignore(doc.get("settings") or {})
+    return doc, ignore
 
 
 def split_removals(items):
@@ -604,13 +723,9 @@ def link_global_md(dry_run=False):
 # into claude-overrides.json (it is a PUBLIC repo: no client details) or left
 # as machine-local on purpose.
 #
-# Dotted paths a root owns on purpose, so the report skips them. The keys of
-# the `seed` section are skipped too: each root owns those after the first write.
-DRIFT_IGNORE = {
-    # written by Claude Code's auto-mode setup from one repo; it describes that
-    # repo (client names, paths), so it is machine-local and never public
-    "autoMode.environment",
-}
+# The report skips the dotted paths a root owns on purpose: the settings keys
+# set to DRIFT_IGNORE, and the keys of the `seed` section, which each root
+# owns after the first write.
 
 
 def settings_drift(current, desired, ignore, path=""):
@@ -635,11 +750,11 @@ def settings_drift(current, desired, ignore, path=""):
             yield where, have
 
 
-def report_drift(doc):
+def report_drift(doc, ignore):
     """Print per-root drift; return the number of drifted entries."""
     print("\nDrift (in settings.json, not in claude-overrides.json):")
-    desired = doc.get("settings") or {}
-    ignore = DRIFT_IGNORE | set(doc.get("seed") or {})
+    desired = doc["settings"]
+    ignore = ignore | set(doc.get("seed") or {})
     total = 0
     for root in config_roots():
         target = settings_file(root)
@@ -658,7 +773,7 @@ def report_drift(doc):
             print(f"    {where}: {json.dumps(value, ensure_ascii=False)[:120]}")
     if total:
         print("  Promote shared entries into claude-overrides.json, or leave "
-              "machine-local ones; add a deliberate local key to DRIFT_IGNORE.")
+              f"machine-local ones; set a deliberate local key to \"{DRIFT_IGNORE}\" there.")
     return total
 
 
@@ -666,12 +781,12 @@ def apply_overrides(dry_run=False):
     """Link each root's CLAUDE.md, hand each claude-overrides.json section to
     its target, then report drift."""
     link_global_md(dry_run)
-    doc = load_override_doc()
+    doc, ignore = load_override_doc()
     if doc is None:
         return
     for section, handler in OVERRIDE_SECTIONS.items():
         handler(doc.get(section) or {}, dry_run=dry_run)
-    report_drift(doc)
+    report_drift(doc, ignore)
 
 
 def main():
@@ -688,8 +803,8 @@ def main():
     args = ap.parse_args()
 
     if args.drift:
-        doc = load_override_doc()
-        return 1 if doc is None or report_drift(doc) else 0
+        doc, ignore = load_override_doc()
+        return 1 if doc is None or report_drift(doc, ignore) else 0
 
     if args.overrides_only:
         apply_overrides(args.dry_run)
@@ -703,8 +818,7 @@ def main():
         print("Claude Code CLI not found, skipping plugin updates")
     else:
         update_cli()
-        for root in config_roots():
-            update_root(root)
+        update_roots(config_roots())
 
     print("\nUpdating skills...")
     install_missing_skills()
