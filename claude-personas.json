@@ -17,7 +17,9 @@
           "frontend-design:*",
           "vitrine:*",
           "color-expert",
-          "figma"
+          "figma",
+          "design-taste-frontend",
+          "hallmark"
         ],
         "quiet": ["gideon:mark-valuable-session"]
       }
@@ -32,6 +34,8 @@
       "skills": {
         "allow": [
           "frontend-design:frontend-design",
+          "design-taste-frontend",
+          "hallmark",
           "vitrine:vitrine",
           "color-expert",
           "figma",
