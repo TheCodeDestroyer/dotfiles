@@ -801,7 +801,36 @@ def link_skills(dry_run=False):
 #
 # The report skips the dotted paths a root owns on purpose: the settings keys
 # set to DRIFT_IGNORE, and the keys of the `seed` section, which each root
-# owns after the first write.
+# owns after the first write. enabledPlugins is the exception: plugin_drift
+# compares it with the seed list, so a plugin added in one root shows up.
+
+
+def managed_plugins(root):
+    """The plugin ids that only a managed policy installs in this root. Read
+    from installed_plugins.json, not `claude plugin list`, to keep --drift
+    fast."""
+    try:
+        with open(os.path.join(root, "plugins", "installed_plugins.json")) as f:
+            plugins = json.load(f).get("plugins") or {}
+    except (OSError, ValueError, AttributeError):
+        return set()
+    return {pid for pid, entries in plugins.items()
+            if entries and all(e.get("scope") == "managed" for e in entries)}
+
+
+def plugin_drift(current, seeded, root):
+    """Yield (path, value) for each user-scope plugin that the root enables
+    and the seed list does not, or that the seed list enables and the root
+    does not. `seed` writes enabledPlugins only once, so without this a
+    plugin installed in one root never reaches the others. Managed plugins
+    are left out: a policy, not the user, controls them."""
+    have = {p for p, on in (current.get("enabledPlugins") or {}).items() if on}
+    want = {p for p, on in (seeded or {}).items() if on}
+    managed = managed_plugins(root)
+    for pid in sorted(have - want - managed):
+        yield f"enabledPlugins.{pid}", "not in seed.enabledPlugins"
+    for pid in sorted(want - have - managed):
+        yield f"enabledPlugins.{pid}", "in seed.enabledPlugins, not enabled here"
 
 
 def settings_drift(current, desired, ignore, path=""):
@@ -843,6 +872,7 @@ def report_drift(doc, ignore):
             print(f"  {target}: unreadable ({exc})")
             continue
         drift = list(settings_drift(current, desired, ignore))
+        drift += plugin_drift(current, (doc.get("seed") or {}).get("enabledPlugins"), root)
         total += len(drift)
         print(f"  {target}: {len(drift) or 'none'}")
         for where, value in drift:
