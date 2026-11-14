@@ -72,7 +72,7 @@
       "command": "bash \"$HOME/.claude/statusline.sh\""
     },
     "env": {
-      "ANTHROPIC_MODEL": "opus[1m]"
+      "ANTHROPIC_MODEL": "opus"
     },
     "hooks": {
       "PreToolUse": [
