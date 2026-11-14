@@ -266,6 +266,9 @@ def refresh_marketplace(root, name):
     return None if rc == 0 else (err.strip() or f"rc={rc}")
 
 
+UPDATE_SCOPES = {"user", "project", "local", "managed"}
+
+
 def update_plugin(root, pid, scope):
     """Update one plugin; return (new_version_or_None, error_or_None)."""
     rc, out, err = sh(
@@ -307,9 +310,12 @@ def update_roots(roots, doc):
             print(f"  {name} ({root}) failed: {err}")
     print(f"  done in {time.monotonic() - started:.0f}s")
 
+    # Only these scopes take `plugin update`. Others, such as "synced" (plugins
+    # the claude.ai account syncs in), are kept up to date by their source.
     started = time.monotonic()
     jobs = [(root, pid, info["scope"])
-            for root in homes for pid, info in sorted(before[root].items())]
+            for root in homes for pid, info in sorted(before[root].items())
+            if info["scope"] in UPDATE_SCOPES]
     print(f"\nUpdating {len(jobs)} plugins in {len(homes)} homes...")
     results = dict(zip(jobs, run_all(jobs, update_plugin)))
     after = dict(zip(homes, run_all([(r,) for r in homes], list_plugins)))
