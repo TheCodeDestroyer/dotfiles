@@ -19,7 +19,8 @@ home's settings.json (lists union, "!<item>" removes a list item, null
 deletes, "DRIFT_IGNORE" marks a key the home owns, machine-local keys survive),
 the `seed` section writes settings.json keys only where a home lacks them,
 and the `config` section merges the same way into each home's global config
-(.claude.json). It also links each home's CLAUDE.md to claude-global.md, and
+(.claude.json). It also links each home's CLAUDE.md to claude-global.md and
+each skill in ~/.agents/skills into each home's skills folder, and
 ends with a drift report: settings.json keys the overrides do not manage.
 `--overrides-only` runs those steps alone; `--dry-run` previews them without
 writing; `--drift` prints only the report.
@@ -90,6 +91,13 @@ def marketplace_names(root):
         return []
 
 
+OFFICIAL_MARKETPLACE = {
+    "claude-plugins-official": {
+        "source": {"source": "github", "repo": "anthropics/claude-plugins-official"},
+    },
+}
+
+
 def install_missing(root):
     """Add the marketplaces and install the plugins settings.json names but the
     root lacks; return (marketplace names, installed plugins) as they stand
@@ -101,8 +109,11 @@ def install_missing(root):
     except (OSError, ValueError):
         settings = {}
 
+    # The official marketplace is built in only for some accounts; others get
+    # anthropic-plugin-directory instead, so add it like any other.
+    known = {**OFFICIAL_MARKETPLACE, **(settings.get("extraKnownMarketplaces") or {})}
     names, added = marketplace_names(root), False
-    for name, entry in sorted((settings.get("extraKnownMarketplaces") or {}).items()):
+    for name, entry in sorted(known.items()):
         src = entry.get("source") or {}
         if name in names or src.get("source") != "github":
             continue
@@ -715,6 +726,53 @@ def link_global_md(dry_run=False):
         print(f"  {mark} {link} -> {GLOBAL_MD}{note}")
 
 
+def link_skills(dry_run=False):
+    """Link every skill in SKILLS_DIR into each root's skills/ folder.
+
+    `skills add` links only into ~/.claude/skills, so the other roots never
+    see a new skill. A name that is already taken by a file, a folder or a
+    link to somewhere else is left alone. A link into SKILLS_DIR whose
+    skill is gone is removed.
+    """
+    print("\nLinking skills into each config root...")
+    try:
+        skills = sorted(n for n in os.listdir(SKILLS_DIR)
+                        if os.path.isdir(os.path.join(SKILLS_DIR, n)))
+    except OSError:
+        print(f"  {SKILLS_DIR}: not found, skipping")
+        return
+    note = " (NOT written, --dry-run)" if dry_run else ""
+    for root in config_roots():
+        if not os.path.isdir(root):
+            print(f"  {root}: no such config root, skipping")
+            continue
+        folder = os.path.join(root, "skills")
+        changes = 0
+        for name in skills:
+            link = os.path.join(folder, name)
+            if os.path.lexists(link):
+                continue
+            target = os.path.relpath(os.path.join(SKILLS_DIR, name), folder)
+            if not dry_run:
+                os.makedirs(folder, exist_ok=True)
+                os.symlink(target, link)
+            print(f"  + {link} -> {target}{note}")
+            changes += 1
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            link = os.path.join(folder, name)
+            if not os.path.islink(link) or os.path.exists(link):
+                continue
+            dest = os.path.normpath(os.path.join(folder, os.readlink(link)))
+            if os.path.dirname(dest) != os.path.normpath(SKILLS_DIR):
+                continue
+            if not dry_run:
+                os.remove(link)
+            print(f"  - {link} (skill is gone){note}")
+            changes += 1
+        if not changes:
+            print(f"  {folder}: up to date")
+
+
 # -- drift ------------------------------------------------------------------
 # The merge above only ADDS what the overrides name, so a key set by hand in
 # one root (/config, /model, /permissions, an "always allow") survives
@@ -781,6 +839,7 @@ def apply_overrides(dry_run=False):
     """Link each root's CLAUDE.md, hand each claude-overrides.json section to
     its target, then report drift."""
     link_global_md(dry_run)
+    link_skills(dry_run)
     doc, ignore = load_override_doc()
     if doc is None:
         return
