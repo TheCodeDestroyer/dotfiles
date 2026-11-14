@@ -149,7 +149,8 @@
       "react@spartan-plugins",
       "node@spartan-plugins",
       "persona@claude-persona",
-      "supermods@thecodedestroyer-plugins"
+      "supermods@thecodedestroyer-plugins",
+      "project@spartan-plugins"
     ],
     "personal": [],
     "work": []
