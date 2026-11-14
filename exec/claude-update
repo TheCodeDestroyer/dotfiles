@@ -18,7 +18,10 @@ moves that skill, and the `settings` section merges keys into each config
 home's settings.json (lists union, "!<item>" removes a list item, null
 deletes, "DRIFT_IGNORE" marks a key the home owns, machine-local keys survive),
 the `seed` section writes settings.json keys only where a home lacks them,
-and the `config` section merges the same way into each home's global config
+the `plugins` section lists the plugins each login gets (`all`, plus a list
+per login name in which "!<id>" removes one), installed on a full run and
+checked in the drift report, and the `config` section merges the same way
+into each home's global config
 (.claude.json). It also links each home's CLAUDE.md to claude-global.md and
 each skill in ~/.agents/skills into each home's skills folder, and
 ends with a drift report: settings.json keys the overrides do not manage.
@@ -98,12 +101,41 @@ OFFICIAL_MARKETPLACE = {
 }
 
 
-def install_missing(root):
-    """Add the official marketplace and the marketplaces settings.json names,
-    then install the plugins settings.json names, where the root lacks them;
-    return (marketplace names, installed plugins) as they stand
-    afterwards. A fresh machine gets both lists from the `seed` section, so run
-    `claude-update --overrides-only` once before the first full run there."""
+def login_name(root):
+    """The logins.<name> in claude-personas.json whose folder is root, else
+    None."""
+    try:
+        with open(PERSONAS_FILE) as f:
+            logins = json.load(f)["logins"]
+        for name, login in logins.items():
+            if os.path.expanduser(login["folder"]) == root:
+                return name
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def wanted_plugins(doc, root):
+    """The plugin ids the `plugins` section gives root: the `all` list plus
+    the list under root's login name, less each "!<id>" in that login list.
+    None when the overrides have no `plugins` section."""
+    section = (doc or {}).get("plugins")
+    if not section:
+        return None
+    keep, _ = split_removals(section.get("all") or [])
+    extra, drop = split_removals(section.get(login_name(root) or "", []) or [])
+    return sorted(set(keep + extra) - set(drop))
+
+
+def install_missing(root, doc=None):
+    """Add the marketplaces and install the plugins that root lacks; return
+    (marketplace names, installed plugins) as they stand afterwards.
+
+    Marketplaces: the official one, the seed list in the overrides and the
+    root's own extraKnownMarketplaces. Plugins: the root's list from the
+    overrides' `plugins` section, else the root's own enabledPlugins. A
+    plugin the root has but its list lacks is not removed; the drift report
+    lists it."""
     try:
         with open(settings_file(root)) as f:
             settings = json.load(f)
@@ -112,7 +144,9 @@ def install_missing(root):
 
     # The official marketplace is built in only for some accounts; others get
     # anthropic-plugin-directory instead, so add it like any other.
-    known = {**OFFICIAL_MARKETPLACE, **(settings.get("extraKnownMarketplaces") or {})}
+    known = {**OFFICIAL_MARKETPLACE,
+             **((doc or {}).get("seed") or {}).get("extraKnownMarketplaces", {}),
+             **(settings.get("extraKnownMarketplaces") or {})}
     names, added = marketplace_names(root), False
     for name, entry in sorted(known.items()):
         src = entry.get("source") or {}
@@ -125,8 +159,11 @@ def install_missing(root):
     if added:
         names = marketplace_names(root)
 
+    wanted = wanted_plugins(doc, root)
+    if wanted is None:
+        wanted = sorted(settings.get("enabledPlugins") or {})
     installed, added = list_plugins(root), False
-    for pid in sorted(settings.get("enabledPlugins") or {}):
+    for pid in wanted:
         if pid in installed:
             continue
         rc, _, err = sh(["claude", "plugin", "install", pid, "--scope", "user"],
@@ -253,13 +290,14 @@ def update_roots(roots):
     reported version is not what `plugin list` shows afterwards.
     """
     homes, names, before = [], {}, {}
+    doc, _ = load_override_doc()
     for root in roots:
         print(f"\n=== {root} ===")
         if not os.path.isdir(root):
             print("  (no such config home, skipping)")
             continue
         homes.append(root)
-        names[root], before[root] = install_missing(root)
+        names[root], before[root] = install_missing(root, doc)
 
     started = time.monotonic()
     jobs = [(root, name) for root in homes for name in names[root]]
@@ -695,6 +733,9 @@ OVERRIDE_SECTIONS = {
     "seed": partial(merge_json_overrides, "seed", settings_file,
                     only_missing=True),
     "config": partial(merge_json_overrides, "config", global_config_file),
+    # A full run installs these in install_missing; the drift report checks
+    # them. Nothing to write here.
+    "plugins": lambda cfg, dry_run=False: None,
 }
 
 
@@ -801,8 +842,8 @@ def link_skills(dry_run=False):
 #
 # The report skips the dotted paths a root owns on purpose: the settings keys
 # set to DRIFT_IGNORE, and the keys of the `seed` section, which each root
-# owns after the first write. enabledPlugins is the exception: plugin_drift
-# compares it with the seed list, so a plugin added in one root shows up.
+# owns after the first write. enabledPlugins is checked on its own:
+# plugin_drift compares it with the root's list in the `plugins` section.
 
 
 def managed_plugins(root):
@@ -818,19 +859,20 @@ def managed_plugins(root):
             if entries and all(e.get("scope") == "managed" for e in entries)}
 
 
-def plugin_drift(current, seeded, root):
+def plugin_drift(current, wanted, root):
     """Yield (path, value) for each user-scope plugin that the root enables
-    and the seed list does not, or that the seed list enables and the root
-    does not. `seed` writes enabledPlugins only once, so without this a
-    plugin installed in one root never reaches the others. Managed plugins
-    are left out: a policy, not the user, controls them."""
+    and its `plugins` list does not name, or that its list names and the root
+    does not enable. Managed plugins are left out: a policy, not the user,
+    controls them."""
+    if wanted is None:
+        return
     have = {p for p, on in (current.get("enabledPlugins") or {}).items() if on}
-    want = {p for p, on in (seeded or {}).items() if on}
+    want = set(wanted)
     managed = managed_plugins(root)
     for pid in sorted(have - want - managed):
-        yield f"enabledPlugins.{pid}", "not in seed.enabledPlugins"
+        yield f"enabledPlugins.{pid}", "not in this login's plugins list"
     for pid in sorted(want - have - managed):
-        yield f"enabledPlugins.{pid}", "in seed.enabledPlugins, not enabled here"
+        yield f"enabledPlugins.{pid}", "in this login's plugins list, not enabled here"
 
 
 def settings_drift(current, desired, ignore, path=""):
@@ -860,6 +902,8 @@ def report_drift(doc, ignore):
     print("\nDrift (in settings.json, not in claude-overrides.json):")
     desired = doc["settings"]
     ignore = ignore | set(doc.get("seed") or {})
+    if doc.get("plugins"):
+        ignore = ignore | {"enabledPlugins"}  # plugin_drift checks it
     total = 0
     for root in config_roots():
         target = settings_file(root)
@@ -872,7 +916,7 @@ def report_drift(doc, ignore):
             print(f"  {target}: unreadable ({exc})")
             continue
         drift = list(settings_drift(current, desired, ignore))
-        drift += plugin_drift(current, (doc.get("seed") or {}).get("enabledPlugins"), root)
+        drift += plugin_drift(current, wanted_plugins(doc, root), root)
         total += len(drift)
         print(f"  {target}: {len(drift) or 'none'}")
         for where, value in drift:
