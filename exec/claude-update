@@ -99,8 +99,9 @@ OFFICIAL_MARKETPLACE = {
 
 
 def install_missing(root):
-    """Add the marketplaces and install the plugins settings.json names but the
-    root lacks; return (marketplace names, installed plugins) as they stand
+    """Add the official marketplace and the marketplaces settings.json names,
+    then install the plugins settings.json names, where the root lacks them;
+    return (marketplace names, installed plugins) as they stand
     afterwards. A fresh machine gets both lists from the `seed` section, so run
     `claude-update --overrides-only` once before the first full run there."""
     try:
@@ -646,6 +647,16 @@ def merge_json_overrides(section, target_for, desired, dry_run=False,
         print(f"  {target}: {len(changes)} change(s) written")
 
 
+def installed_skills():
+    """The skill names in SKILLS_DIR: each folder that holds a SKILL.md.
+    Raises OSError when SKILLS_DIR is missing."""
+    return sorted(
+        entry
+        for entry in os.listdir(SKILLS_DIR)
+        if os.path.isfile(os.path.join(SKILLS_DIR, entry, "SKILL.md"))
+    )
+
+
 def apply_skill_overrides(cfg, dry_run=False):
     print("\nApplying skill frontmatter overrides...")
     if not cfg:
@@ -655,12 +666,7 @@ def apply_skill_overrides(cfg, dry_run=False):
         print(f"  no skills directory at {SKILLS_DIR}, skipping")
         return
 
-    names = sorted(
-        entry
-        for entry in os.listdir(SKILLS_DIR)
-        if os.path.isfile(os.path.join(SKILLS_DIR, entry, "SKILL.md"))
-    )
-    resolved, warnings = resolve_overrides(cfg, names)
+    resolved, warnings = resolve_overrides(cfg, installed_skills())
 
     patched = 0
     for name, values in sorted(resolved.items()):
@@ -732,43 +738,55 @@ def link_skills(dry_run=False):
     `skills add` links only into ~/.claude/skills, so the other roots never
     see a new skill. A name that is already taken by a file, a folder or a
     link to somewhere else is left alone. A link into SKILLS_DIR whose
-    skill is gone is removed.
+    skill is gone is removed. A link is relative to the folder's real path,
+    so it also resolves when the root or its skills/ folder is a symlink.
     """
     print("\nLinking skills into each config root...")
     try:
-        skills = sorted(n for n in os.listdir(SKILLS_DIR)
-                        if os.path.isdir(os.path.join(SKILLS_DIR, n)))
+        skills = installed_skills()
     except OSError:
         print(f"  {SKILLS_DIR}: not found, skipping")
         return
+    skills_dir = os.path.abspath(SKILLS_DIR)
+    skills_real = os.path.realpath(SKILLS_DIR)
     note = " (NOT written, --dry-run)" if dry_run else ""
     for root in config_roots():
         if not os.path.isdir(root):
             print(f"  {root}: no such config root, skipping")
             continue
         folder = os.path.join(root, "skills")
+        if os.path.lexists(folder) and not os.path.isdir(folder):
+            print(f"  {folder}: not a folder, skipping")
+            continue
+        # A relative link resolves from the folder's real path, not from the
+        # path we reached it by.
+        real = os.path.realpath(folder)
         changes = 0
-        for name in skills:
-            link = os.path.join(folder, name)
-            if os.path.lexists(link):
-                continue
-            target = os.path.relpath(os.path.join(SKILLS_DIR, name), folder)
-            if not dry_run:
-                os.makedirs(folder, exist_ok=True)
-                os.symlink(target, link)
-            print(f"  + {link} -> {target}{note}")
-            changes += 1
-        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
-            link = os.path.join(folder, name)
-            if not os.path.islink(link) or os.path.exists(link):
-                continue
-            dest = os.path.normpath(os.path.join(folder, os.readlink(link)))
-            if os.path.dirname(dest) != os.path.normpath(SKILLS_DIR):
-                continue
-            if not dry_run:
-                os.remove(link)
-            print(f"  - {link} (skill is gone){note}")
-            changes += 1
+        try:
+            for name in skills:
+                link = os.path.join(folder, name)
+                if os.path.lexists(link):
+                    continue
+                target = os.path.relpath(os.path.join(skills_dir, name), real)
+                if not dry_run:
+                    os.makedirs(folder, exist_ok=True)
+                    os.symlink(target, link)
+                print(f"  + {link} -> {target}{note}")
+                changes += 1
+            for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+                link = os.path.join(folder, name)
+                if not os.path.islink(link) or os.path.exists(link):
+                    continue
+                dest = os.path.normpath(os.path.join(real, os.readlink(link)))
+                if os.path.realpath(os.path.dirname(dest)) != skills_real:
+                    continue
+                if not dry_run:
+                    os.remove(link)
+                print(f"  - {link} (skill is gone){note}")
+                changes += 1
+        except OSError as exc:
+            print(f"  {folder}: failed, skipping ({exc})")
+            continue
         if not changes:
             print(f"  {folder}: up to date")
 
@@ -836,8 +854,8 @@ def report_drift(doc, ignore):
 
 
 def apply_overrides(dry_run=False):
-    """Link each root's CLAUDE.md, hand each claude-overrides.json section to
-    its target, then report drift."""
+    """Link each root's CLAUDE.md and skills, hand each claude-overrides.json
+    section to its target, then report drift."""
     link_global_md(dry_run)
     link_skills(dry_run)
     doc, ignore = load_override_doc()
