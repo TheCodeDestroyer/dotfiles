@@ -21,10 +21,10 @@ the `seed` section writes settings.json keys only where a home lacks them,
 the `plugins` section lists the plugins each login gets (`all`, plus a list
 per login name in which "!<id>" removes one), installed on a full run and
 checked in the drift report, and the `config` section merges the same way
-into each home's global config
-(.claude.json). It also links each home's CLAUDE.md to claude-global.md and
-each skill in ~/.agents/skills into each home's skills folder, and
-ends with a drift report: settings.json keys the overrides do not manage.
+into each home's global config (.claude.json). It also links each home's
+CLAUDE.md to claude-global.md and each skill in ~/.agents/skills into each
+home's skills folder, and ends with a drift report: settings.json keys the
+overrides do not manage.
 `--overrides-only` runs those steps alone; `--dry-run` previews them without
 writing; `--drift` prints only the report.
 """
@@ -57,16 +57,23 @@ def sh(cmd, root=None, timeout=600):
         return 124, "", f"timed out after {timeout}s"
 
 
+def logins():
+    """{login name: expanded folder} from claude-personas.json, or None when
+    the file is missing or malformed."""
+    try:
+        with open(PERSONAS_FILE) as f:
+            return {name: os.path.expanduser(login["folder"])
+                    for name, login in json.load(f)["logins"].items()}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
 def config_roots():
     """Every Claude config root: each logins.<name>.folder in
     claude-personas.json, else ~/.claude. Same function in claude-config-guard.
     """
-    try:
-        with open(PERSONAS_FILE) as f:
-            logins = json.load(f)["logins"].values()
-        return [os.path.expanduser(login["folder"]) for login in logins]
-    except (OSError, ValueError, KeyError, TypeError):
-        return [DEFAULT_ROOT]
+    found = logins()
+    return [DEFAULT_ROOT] if found is None else list(found.values())
 
 
 def list_plugins(root):
@@ -104,15 +111,8 @@ OFFICIAL_MARKETPLACE = {
 def login_name(root):
     """The logins.<name> in claude-personas.json whose folder is root, else
     None."""
-    try:
-        with open(PERSONAS_FILE) as f:
-            logins = json.load(f)["logins"]
-        for name, login in logins.items():
-            if os.path.expanduser(login["folder"]) == root:
-                return name
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        pass
-    return None
+    return next((name for name, folder in (logins() or {}).items()
+                 if folder == root), None)
 
 
 def wanted_plugins(doc, root):
@@ -123,7 +123,7 @@ def wanted_plugins(doc, root):
     if not section:
         return None
     keep, _ = split_removals(section.get("all") or [])
-    extra, drop = split_removals(section.get(login_name(root) or "", []) or [])
+    extra, drop = split_removals(section.get(login_name(root)) or [])
     return sorted(set(keep + extra) - set(drop))
 
 
@@ -279,7 +279,7 @@ def update_plugin(root, pid, scope):
     return result.get("newVersion"), None
 
 
-def update_roots(roots):
+def update_roots(roots, doc):
     """Refresh every marketplace, then update every plugin, across all homes.
 
     Each phase runs as one parallel pool over all homes, so the slowest single
@@ -290,7 +290,6 @@ def update_roots(roots):
     reported version is not what `plugin list` shows afterwards.
     """
     homes, names, before = [], {}, {}
-    doc, _ = load_override_doc()
     for root in roots:
         print(f"\n=== {root} ===")
         if not os.path.isdir(root):
@@ -569,10 +568,10 @@ def load_override_doc():
     # A key that is not a known section is almost certainly the pre-sections
     # flat format ({skill: {key: value}}), which would otherwise resolve to
     # nothing at all. Say so rather than silently no-op.
-    unknown = [k for k in doc if k not in OVERRIDE_SECTIONS]
+    unknown = [k for k in doc if k not in SECTIONS]
     if unknown:
         print(f"  warning: ignoring non-section key(s): {', '.join(sorted(unknown))}")
-        print(f"  (expected top-level sections: {', '.join(OVERRIDE_SECTIONS)})")
+        print(f"  (expected top-level sections: {', '.join(SECTIONS)})")
     doc["settings"], ignore = split_drift_ignore(doc.get("settings") or {})
     return doc, ignore
 
@@ -726,17 +725,18 @@ def apply_skill_overrides(cfg, dry_run=False):
 
 # Override sections, by target. Adding a target is a row here and nothing else:
 # the section name, the handler behind it and the "not a section" warning in
-# load_override_doc all come from this one mapping.
+# load_override_doc (through SECTIONS) all come from this one mapping.
 OVERRIDE_SECTIONS = {
     "skills": apply_skill_overrides,
     "settings": partial(merge_json_overrides, "settings", settings_file),
     "seed": partial(merge_json_overrides, "seed", settings_file,
                     only_missing=True),
     "config": partial(merge_json_overrides, "config", global_config_file),
-    # A full run installs these in install_missing; the drift report checks
-    # them. Nothing to write here.
-    "plugins": lambda cfg, dry_run=False: None,
 }
+
+# Every valid top-level key. `plugins` has no write step: a full run installs
+# it in install_missing and the drift report checks it.
+SECTIONS = [*OVERRIDE_SECTIONS, "plugins"]
 
 
 GLOBAL_MD = os.path.join(REPO, "claude-global.md")
@@ -902,8 +902,6 @@ def report_drift(doc, ignore):
     print("\nDrift (in settings.json, not in claude-overrides.json):")
     desired = doc["settings"]
     ignore = ignore | set(doc.get("seed") or {})
-    if doc.get("plugins"):
-        ignore = ignore | {"enabledPlugins"}  # plugin_drift checks it
     total = 0
     for root in config_roots():
         target = settings_file(root)
@@ -915,8 +913,11 @@ def report_drift(doc, ignore):
         except (json.JSONDecodeError, OSError) as exc:
             print(f"  {target}: unreadable ({exc})")
             continue
-        drift = list(settings_drift(current, desired, ignore))
-        drift += plugin_drift(current, wanted_plugins(doc, root), root)
+        wanted = wanted_plugins(doc, root)
+        # With a plugins list, plugin_drift checks enabledPlugins instead.
+        skip = ignore if wanted is None else ignore | {"enabledPlugins"}
+        drift = list(settings_drift(current, desired, skip))
+        drift += plugin_drift(current, wanted, root)
         total += len(drift)
         print(f"  {target}: {len(drift) or 'none'}")
         for where, value in drift:
@@ -927,12 +928,12 @@ def report_drift(doc, ignore):
     return total
 
 
-def apply_overrides(dry_run=False):
+def apply_overrides(doc, ignore, dry_run=False):
     """Link each root's CLAUDE.md and skills, hand each claude-overrides.json
-    section to its target, then report drift."""
+    section to its target, then report drift. doc and ignore come from
+    load_override_doc."""
     link_global_md(dry_run)
     link_skills(dry_run)
-    doc, ignore = load_override_doc()
     if doc is None:
         return
     for section, handler in OVERRIDE_SECTIONS.items():
@@ -958,18 +959,19 @@ def main():
         return 1 if doc is None or report_drift(doc, ignore) else 0
 
     if args.overrides_only:
-        apply_overrides(args.dry_run)
+        apply_overrides(*load_override_doc(), args.dry_run)
         return 0
 
     print("=" * 64)
     print("UPDATING CLAUDE CODE")
     print("=" * 64)
+    doc, ignore = load_override_doc()
 
     if not shutil.which("claude"):
         print("Claude Code CLI not found, skipping plugin updates")
     else:
         update_cli()
-        update_roots(config_roots())
+        update_roots(config_roots(), doc)
 
     print("\nUpdating skills...")
     install_missing_skills()
@@ -983,7 +985,7 @@ def main():
     except subprocess.TimeoutExpired:
         print("  skills update timed out after 600s")
 
-    apply_overrides(args.dry_run)
+    apply_overrides(doc, ignore, args.dry_run)
 
     print("\n>>> Restart Claude Code to apply plugin updates "
           "(versions are pinned at process start).")
