@@ -100,23 +100,6 @@
     "copyOnSelect": false
   },
   "seed": {
-    "enabledPlugins": {
-      "frontend-design@claude-plugins-official": true,
-      "gideon@thecodedestroyer-plugins": true,
-      "skill-creator@claude-plugins-official": true,
-      "typescript-lsp@claude-plugins-official": true,
-      "pyright-lsp@claude-plugins-official": true,
-      "security-guidance@claude-plugins-official": true,
-      "context7@context7-marketplace": true,
-      "vitrine@spartan-plugins": true,
-      "convex@spartan-plugins": true,
-      "corvus@spartan-plugins": true,
-      "git@spartan-plugins": true,
-      "react@spartan-plugins": true,
-      "node@spartan-plugins": true,
-      "persona@claude-persona": true,
-      "supermods@thecodedestroyer-plugins": true
-    },
     "extraKnownMarketplaces": {
       "openai-codex": {
         "source": {
@@ -149,5 +132,27 @@
         }
       }
     }
+  },
+  "plugins": {
+    "all": [
+      "frontend-design@claude-plugins-official",
+      "gideon@thecodedestroyer-plugins",
+      "skill-creator@claude-plugins-official",
+      "typescript-lsp@claude-plugins-official",
+      "pyright-lsp@claude-plugins-official",
+      "security-guidance@claude-plugins-official",
+      "context7@context7-marketplace",
+      "vitrine@spartan-plugins",
+      "convex@spartan-plugins",
+      "corvus@spartan-plugins",
+      "git@spartan-plugins",
+      "react@spartan-plugins",
+      "node@spartan-plugins",
+      "persona@claude-persona",
+      "supermods@thecodedestroyer-plugins",
+      "project@spartan-plugins"
+    ],
+    "personal": [],
+    "work": []
   }
 }
