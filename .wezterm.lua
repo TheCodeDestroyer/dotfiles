@@ -14,6 +14,12 @@ config.front_end = 'WebGpu'
 config.webgpu_power_preference = 'LowPower'
 config.max_fps = 30
 
+-- Power: on macOS 26+ a WezTerm window with a shadow causes constant GPU
+-- load that grows with window size (wezterm/wezterm#7271, still open and
+-- not fixed in nightly). Turning the shadow off cut system GPU load from
+-- about 24% to 8% here.
+config.window_decorations = 'TITLE | RESIZE | MACOS_FORCE_DISABLE_SHADOW'
+
 wezterm.on('format-tab-title', function(tab, tabs, panes, conf, hover, max_width)
   -- full tab width in cells — unaffected by pane splits. pcall takes the
   -- method directly rather than wrapping it in a closure: this runs per tab
