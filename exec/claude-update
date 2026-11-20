@@ -10,7 +10,9 @@ This script: refreshes every marketplace, then updates every installed plugin
 at its own scope, each step in parallel across all config homes
 (CLAUDE_UPDATE_JOBS at once, default 10), and prints a per-home drift table
 (old -> new). Plugin updates need a Claude Code restart to take effect, so the
-table reflects what will be active after restart.
+table reflects what will be active after restart. Before the table it copies
+files that a plugin's cache copy lacks in from its marketplace clone, when the
+clone holds exactly the commit the plugin was installed from.
 
 It then applies claude-overrides.json: the `skills` section re-patches SKILL.md
 frontmatter, which `skills update` overwrites with upstream whenever upstream
@@ -55,6 +57,24 @@ def sh(cmd, root=None, timeout=600):
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
         return 124, "", f"timed out after {timeout}s"
+    except OSError as e:  # the command is not installed
+        return 127, "", str(e)
+
+
+def read_json(path):
+    """The parsed JSON in path, or None when it is missing or malformed."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def installed_plugins(root):
+    """The `plugins` map of root's installed_plugins.json, else {}."""
+    doc = read_json(os.path.join(root, "plugins", "installed_plugins.json"))
+    plugins = doc.get("plugins") if isinstance(doc, dict) else None
+    return plugins if isinstance(plugins, dict) else {}
 
 
 def logins():
@@ -330,14 +350,194 @@ def update_roots(roots, doc):
             after[root] = list_plugins(root)
     print(f"  done in {time.monotonic() - started:.0f}s")
 
+    print("\nChecking plugin cache copies for missing files...")
+    repairs, skipped = {}, []
+    for root in homes:
+        repairs[root], left = repair_cache(root)
+        skipped += left
+    if not skipped and not any(repairs.values()):
+        print("  no missing files")
+
     for root in homes:
         print(f"\n=== {root} ===")
         report_versions(before[root], after[root],
                         {pid: err for (r, pid, _), (_, err) in results.items()
-                         if r == root and err})
+                         if r == root and err},
+                        repairs[root])
 
 
-def report_versions(before, after, failures):
+CACHE_IGNORE = {".in_use", ".orphaned_at", ".git"}
+
+
+def within(path, top):
+    """True when real path `path` is real path `top` or lies under it."""
+    return path == top or path.startswith(top.rstrip(os.sep) + os.sep)
+
+
+def tree_paths(top):
+    """Every path under top, relative to it, less CACHE_IGNORE names. Does not
+    follow symlinks to directories."""
+    found = set()
+    for dirpath, dirs, files in os.walk(top):
+        dirs[:] = [d for d in dirs if d not in CACHE_IGNORE]
+        rel = os.path.relpath(dirpath, top)
+        for name in dirs + [f for f in files if f not in CACHE_IGNORE]:
+            found.add(os.path.normpath(os.path.join(rel, name)))
+    return found
+
+
+def plugin_source_dir(root, pid):
+    """(marketplace clone, plugin source folder in it) for plugin pid
+    ("name@marketplace"), or (clone, None) when the marketplace does not list
+    it with a local path source."""
+    name, _, market = pid.partition("@")
+    clone = os.path.realpath(os.path.join(root, "plugins", "marketplaces", market))
+    doc = read_json(os.path.join(clone, ".claude-plugin", "marketplace.json"))
+    if not isinstance(doc, dict):
+        return clone, None
+    entries = doc.get("plugins") or []
+    meta = doc.get("metadata")
+    base = (meta.get("pluginRoot") if isinstance(meta, dict) else None) or ""
+    source = next((p.get("source") for p in
+                   (entries if isinstance(entries, list) else [])
+                   if isinstance(p, dict) and p.get("name") == name), None)
+    if not isinstance(source, str):
+        return clone, None  # url / git-subdir sources have no local copy
+    # metadata.pluginRoot prefixes a bare source name ("formatter"), not "./x".
+    if isinstance(base, str) and not source.startswith((".", "/")):
+        source = os.path.join(base, source)
+    path = os.path.realpath(os.path.join(clone, source))
+    return clone, (path if os.path.isdir(path) else None)
+
+
+def source_matches_commit(clone, source, sha, pid, shallow):
+    """True when the source folder on disk is exactly what it was at the
+    commit the plugin was installed from: no tracked change since sha, and no
+    untracked or ignored files. Upstream can add files without a version bump
+    (seen in claude-plugins-official), so an equal version alone is not proof.
+    False when there is no sha or the clone is not a git checkout. Clones are
+    shallow, so only a sha equal to HEAD is found; others go on `shallow`."""
+    if not sha:
+        return False
+    rc, top, _ = sh(["git", "-C", source, "rev-parse", "--show-toplevel"], timeout=30)
+    if rc != 0 or os.path.realpath(top.strip()) != clone:
+        return False
+    rc, _, _ = sh(["git", "-C", source, "cat-file", "-e", f"{sha}^{{commit}}"],
+                  timeout=30)
+    if rc != 0:
+        shallow.append(pid)
+        return False
+    rc, _, _ = sh(["git", "-C", source, "diff", "--quiet", sha, "--", "."], timeout=30)
+    if rc != 0:
+        return False
+    rc, extra, _ = sh(["git", "-C", source, "ls-files", "--others", "--", "."],
+                      timeout=30)
+    return rc == 0 and not extra.strip()
+
+
+def link_target(src, clone):
+    """The real path to copy for symlink src: its target, when that exists
+    inside the marketplace clone and is not a folder that holds src. None for
+    a broken link, one that leads out of the clone, or one that loops: Claude
+    Code leaves those out of its cache copies too."""
+    target = os.path.realpath(src)
+    if (os.path.exists(target) and within(target, clone)
+            and not within(os.path.realpath(os.path.dirname(src)), target)):
+        return target
+    return None
+
+
+def copy_path(src, dst, clone, seen=frozenset()):
+    """Copy one file or folder like `cp -Rp`, but copy what a symlink points
+    to, as link_target gives it, so the copy holds no symlinks. A link that
+    link_target leaves out is skipped."""
+    if os.path.islink(src):
+        src = link_target(src, clone)
+        if src is None or src in seen:
+            return
+    if os.path.isdir(src):
+        here = os.path.realpath(src)
+        os.mkdir(dst)
+        for name in sorted(os.listdir(src)):
+            if name not in CACHE_IGNORE:
+                copy_path(os.path.join(src, name), os.path.join(dst, name),
+                          clone, seen | {here})
+        shutil.copystat(src, dst)
+    else:
+        shutil.copy2(src, dst)
+
+
+def repair_cache(root):
+    """Copy in files that an installed plugin's cache copy lacks.
+
+    Claude Code sometimes leaves a cache version folder half written (seen: an
+    ops 0.15.0 copy with no bin/, so every hook failed). `plugin update` does
+    not fix it while the version is unchanged. Compare each copy with its
+    marketplace clone only when the clone's plugin.json version equals the
+    installed version, since a pinned older version naturally differs. Never
+    deletes anything, and writes only into real folders under root's plugin
+    cache. Returns (repairs, pids skipped because the clone moved on).
+    """
+    installed = installed_plugins(root)
+    cache = os.path.realpath(os.path.join(root, "plugins", "cache"))
+    repaired, shallow = [], []
+    for pid, entries in sorted(installed.items()):
+        clone, source = plugin_source_dir(root, pid)
+        if not source or not isinstance(entries, list):
+            continue
+        manifest = read_json(os.path.join(source, ".claude-plugin", "plugin.json"))
+        if not isinstance(manifest, dict):
+            continue
+        source_version = manifest.get("version")
+        source_paths = None
+        copies = {tuple(str(e.get(k) or "")
+                        for k in ("installPath", "version", "gitCommitSha"))
+                  for e in entries if isinstance(e, dict)}
+        for path, version, sha in sorted(copies):
+            # A symlinked install path, or one outside the cache, is a working
+            # folder or a link farm, not a cache copy to write into.
+            real = os.path.realpath(path) if path else ""
+            if (not path or version != source_version or os.path.islink(path)
+                    or not os.path.isdir(path) or not within(real, cache)):
+                continue
+            if source_paths is None:
+                source_paths = tree_paths(source)
+            missing = source_paths - tree_paths(path)
+            # Copy only the topmost missing paths; a folder brings its contents.
+            # Leave out a symlink that Claude Code leaves out too, and a path
+            # whose folder in the copy is a symlink that leads out of it.
+            tops = sorted(
+                p for p in missing if os.path.dirname(p) not in missing
+                and (not os.path.islink(os.path.join(source, p))
+                     or link_target(os.path.join(source, p), clone))
+                and within(os.path.realpath(os.path.join(path, os.path.dirname(p))),
+                           real))
+            if not tops or not source_matches_commit(clone, source, sha, pid, shallow):
+                continue
+            copied, failed = [], []
+            for rel in tops:
+                try:
+                    copy_path(os.path.join(source, rel), os.path.join(path, rel), clone)
+                    copied.append(rel)
+                except OSError as e:
+                    failed.append(rel)
+                    print(f"  could not copy {rel} into {pid} {version} in {root}: {e}")
+            if copied:
+                print(f"  repaired {pid} {version} in {root}: copied {', '.join(copied)}")
+            repaired.append((pid, version, copied, failed))
+    shallow = sorted(set(shallow))
+    if shallow:
+        print(f"  missing files left in place in {root}, installed commit not in "
+              f"the shallow clone: {', '.join(shallow)}")
+    return repaired, shallow
+
+
+def report_versions(before, after, failures, repairs=()):
+    if repairs:
+        print("  Cache copies with missing files (copied from marketplace):")
+        for pid, version, copied, failed in repairs:
+            note = f"; failed: {', '.join(failed)}" if failed else ""
+            print(f"    {pid} {version}: copied {', '.join(copied) or 'nothing'}{note}")
     if not before:
         print("  No installed plugins found.")
         return
@@ -856,12 +1056,7 @@ def managed_plugins(root):
     """The plugin ids that only a managed policy installs in this root. Read
     from installed_plugins.json, not `claude plugin list`, to keep --drift
     fast."""
-    try:
-        with open(os.path.join(root, "plugins", "installed_plugins.json")) as f:
-            plugins = json.load(f).get("plugins") or {}
-    except (OSError, ValueError, AttributeError):
-        return set()
-    return {pid for pid, entries in plugins.items()
+    return {pid for pid, entries in installed_plugins(root).items()
             if entries and all(e.get("scope") == "managed" for e in entries)}
 
 
